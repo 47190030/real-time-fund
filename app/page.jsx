@@ -98,7 +98,7 @@ const onToggleHistoryCollapse = (code) => {
   });
 };
 const [collapsedCodes, setCollapsedCodes] = useState(new Set());
-const [collapsedTrends, setCollapsedTrends] = useState(new Set()); // 业绩走势收起状态
+const [collapsedTrends, setCollapsedTrends] = useState(new Set());// 业绩走势收起状态
 // 新增：历史净值展开状态
 const [collapsedHistory, setCollapsedHistory] = useState(new Set());
 const DEFAULT_TZ = 'Asia/Shanghai';
