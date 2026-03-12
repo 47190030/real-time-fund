@@ -64,8 +64,7 @@ import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { toast as sonnerToast } from 'sonner';
 import { recordValuation, getAllValuationSeries, clearFund } from './lib/valuationTimeseries';
 import { loadHolidaysForYears, isTradingDay as isDateTradingDay } from './lib/tradingCalendar';
-import { parseFundTextWithLLM, fetchFundData, fetchLatestRelease, fetchShanghaiIndexDate, fetchSmartFundNetValue, searchFunds, fetchFundHistory } from './api/fund';
-// 注意：新增了 fetchFundHistory
+import { parseFundTextWithLLM, fetchFundData, fetchLatestRelease, fetchShanghaiIndexDate, fetchSmartFundNetValue, searchFunds } from './api/fund';
 import packageJson from '../package.json';
 import PcFundTable from './components/PcFundTable';
 import MobileFundTable from './components/MobileFundTable';
@@ -74,33 +73,7 @@ import { useFundFuzzyMatcher } from './hooks/useFundFuzzyMatcher';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(isSameOrAfter);
-// 切换业绩走势展开状态
-const handleToggleTrendCollapse = (fundCode) => {
-  setCollapsedTrends(prev => {
-    const newSet = new Set(prev);
-    if (newSet.has(fundCode)) {
-      newSet.delete(fundCode);
-    } else {
-      newSet.add(fundCode);
-    }
-    return newSet;
-  });
-};
-const onToggleHistoryCollapse = (code) => {
-  setCollapsedHistory(prev => {
-    const next = new Set(prev);
-    if (next.has(code)) {
-      next.delete(code);
-    } else {
-      next.add(code);
-    }
-    return next;
-  });
-};
-const [collapsedCodes, setCollapsedCodes] = useState(new Set());
-const [collapsedTrends, setCollapsedTrends] = useState(new Set());// 业绩走势收起状态
-// 新增：历史净值展开状态
-const [collapsedHistory, setCollapsedHistory] = useState(new Set());
+
 const DEFAULT_TZ = 'Asia/Shanghai';
 const getBrowserTimeZone = () => {
   if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
@@ -3383,13 +3356,13 @@ export default function HomePage() {
       isScanImporting;
 
     if (isAnyModalOpen) {
-      document.body.style.overflow = 'hidden';
+      containerRef.current.style.overflow = 'hidden';
     } else {
-      document.body.style.overflow = '';
+      containerRef.current.style.overflow = '';
     }
 
     return () => {
-      document.body.style.overflow = '';
+      containerRef.current.style.overflow = '';
     };
   }, [
     settingsOpen,
@@ -3513,7 +3486,7 @@ export default function HomePage() {
               <path d="M5 14c2-4 7-6 14-5" stroke="var(--primary)" strokeWidth="2" />
             </svg>
           </div>
-          <span>养基乐</span>
+          <span>基估宝</span>
         </div>
         <div className={`glass add-fund-section navbar-add-fund ${(isSearchFocused || selectedFunds.length > 0) ? 'search-focused' : ''}`} role="region" aria-label="添加基金">
           <div className="search-container" ref={dropdownRef}>
@@ -3637,7 +3610,7 @@ export default function HomePage() {
               <UpdateIcon width="14" height="14" />
             </div>
           )}
-
+          
           {isMobile && (
             <button
               className="icon-button mobile-search-btn"
@@ -4039,8 +4012,6 @@ export default function HomePage() {
                                 favorites={favorites}
                                 sortBy={sortBy}
                                 onReorder={handleReorder}
-                                collapsedHistory={collapsedHistory}
-                                onToggleHistoryCollapse={onToggleHistoryCollapse}
                                 onRemoveFund={(row) => {
                                   if (refreshing) return;
                                   if (!row || !row.code) return;
@@ -4214,8 +4185,6 @@ export default function HomePage() {
                               onRemoveFromGroup={removeFundFromCurrentGroup}
                               onToggleFavorite={toggleFavorite}
                               onRemoveFund={requestRemoveFund}
-                              collapsedHistory={collapsedHistory}  // 传递状态
-                              onToggleHistoryCollapse={onToggleHistoryCollapse} // 传递更新状态的函数
                               onHoldingClick={(fund) => setHoldingModal({ open: true, fund })}
                               onActionClick={(fund) => setActionModal({ open: true, fund })}
                               onPercentModeToggle={(code) =>
@@ -4290,8 +4259,7 @@ export default function HomePage() {
               点此提交反馈
             </button>
           </p>
-
-        </div>
+         </div>
       </div>
 
       <AnimatePresence>
