@@ -7,6 +7,119 @@ import { cachedRequest, clearCachedRequest } from '../lib/cacheRequest';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+// 在现有的API文件中添加以下函数
+
+/**
+ * 获取基金历史净值数据
+ * @param {string} code 基金代码
+ * @param {number} page 页码
+ * @param {number} per 每页条数
+ * @param {string} sdate 开始日期
+ * @param {string} edate 结束日期
+ * @returns {Promise} 返回历史净值数据
+ */
+export const fetchFundNetValueHistory = async (code, page = 1, per = 20, sdate = '', edate = '') => {
+  if (typeof window === 'undefined') return { data: [], totalPages: 1, currentPage: page, perPage: per };
+  
+  const url = `https://fundf10.eastmoney.com/F10DataApi.aspx?type=lsjz&code=${code}&page=${page}&per=${per}&sdate=${sdate}&edate=${edate}`;
+  
+  try {
+    const apidata = await loadScript(url);
+    if (apidata && apidata.content) {
+      const content = apidata.content;
+      
+      // 解析表格数据
+      const rows = content.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+      const historyData = [];
+      
+      for (const row of rows) {
+        if (row.includes('td')) {
+          const cells = row.match(/<td[^>]*>(.*?)<\/td>/gi) || [];
+          if (cells && cells.length >= 7) {
+            const getText = (td) => td.replace(/<[^>]+>/g, '').trim();
+            
+            const dateStr = getText(cells[0] || '');
+            const unitNetValue = getText(cells[1] || '');
+            const cumulativeNetValue = getText(cells[2] || '');
+            const dailyChange = getText(cells[3] || '');
+            
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+              historyData.push({
+                date: dateStr,
+                unitNetValue,
+                cumulativeNetValue: cumulativeNetValue || unitNetValue,
+                dailyChange
+              });
+            }
+          }
+        }
+      }
+      
+      // 解析总页数
+      const pageMatch = content.match(/pages:\s*(\d+)/i);
+      const totalPages = pageMatch ? parseInt(pageMatch[1], 10) : 1;
+      
+      return {
+        data: historyData,
+        totalPages,
+        currentPage: page,
+        perPage: per
+      };
+    }
+    return { data: [], totalPages: 1, currentPage: page, perPage: per };
+  } catch (e) {
+    console.error('获取历史净值失败:', e);
+    return { data: [], totalPages: 1, currentPage: page, perPage: per };
+  }
+};
+
+/**
+ * 根据时间范围获取基金历史净值
+ * @param {string} code 基金代码
+ * @param {string} range 时间范围 '1m', '3m', '6m', '1y', 'all'
+ * @returns {Promise} 返回历史净值数据
+ */
+export const fetchFundNetValueHistoryByRange = async (code, range = '1m') => {
+  if (typeof window === 'undefined') return { data: [] };
+  
+  const today = toTz();
+  let startDate = today.clone();
+  let per = 20;
+  
+  switch (range) {
+    case '1m':
+      startDate = startDate.subtract(1, 'month');
+      per = 30;
+      break;
+    case '3m':
+      startDate = startDate.subtract(3, 'month');
+      per = 90;
+      break;
+    case '6m':
+      startDate = startDate.subtract(6, 'month');
+      per = 180;
+      break;
+    case '1y':
+      startDate = startDate.subtract(1, 'year');
+      per = 365;
+      break;
+    case 'all':
+      startDate = dayjs('2000-01-01').tz(TZ);
+      per = 1000;
+      break;
+    default:
+      startDate = startDate.subtract(1, 'month');
+      per = 30;
+  }
+  
+  return fetchFundNetValueHistory(
+    code,
+    1,
+    per,
+    startDate.format('YYYY-MM-DD'),
+    today.format('YYYY-MM-DD')
+  );
+};
 const DEFAULT_TZ = 'Asia/Shanghai';
 const getBrowserTimeZone = () => {
   if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
