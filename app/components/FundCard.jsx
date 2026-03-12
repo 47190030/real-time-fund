@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -17,7 +18,10 @@ import {
   StarIcon,
   SwitchIcon,
   TrashIcon,
+  CalendarIcon,
+  RefreshIcon,
 } from './Icons';
+import { fetchFundNetValueHistoryByRange } from '../lib/api';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -69,12 +73,311 @@ export default function FundCard({
   onPercentModeToggle,
   onToggleCollapse,
   onToggleTrendCollapse,
-  layoutMode = 'card', // 'card' | 'drawer'，drawer 时前10重仓与业绩走势以 Tabs 展示
+  layoutMode = 'card',
   masked = false,
 }) {
   const holding = holdings[f?.code];
   const profit = getHoldingProfit?.(f, holding) ?? null;
   const hasHoldings = f.holdingsIsLastQuarter && Array.isArray(f.holdings) && f.holdings.length > 0;
+
+  // 历史净值相关状态
+  const [historyData, setHistoryData] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyRange, setHistoryRange] = useState('1m');
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [historyError, setHistoryError] = useState(null);
+  const [historyLastUpdated, setHistoryLastUpdated] = useState(null);
+
+  // 获取历史净值数据
+  const loadHistoryData = useCallback(async (range) => {
+    if (!f?.code || historyLoading) return;
+    
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const result = await fetchFundNetValueHistoryByRange(f.code, range);
+      
+      if (result && result.data) {
+        // 处理涨跌幅格式
+        const processedData = result.data.map(item => {
+          let dailyChangeFormatted = item.dailyChange || '--';
+          // 提取数字百分比
+          const match = dailyChangeFormatted.match(/([-+]?[\d.]+)%/);
+          const changeValue = match ? parseFloat(match[1]) : null;
+          
+          return {
+            ...item,
+            dailyChangeFormatted,
+            changeValue,
+            isUp: changeValue > 0,
+            isDown: changeValue < 0
+          };
+        });
+        
+        setHistoryData(processedData);
+        setHistoryLastUpdated(Date.now());
+      } else {
+        setHistoryData([]);
+      }
+    } catch (error) {
+      console.error('获取历史净值失败:', error);
+      setHistoryError('获取历史净值失败，请稍后重试');
+      setHistoryData([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [f?.code, historyLoading]);
+
+  // 初始加载或range变化时重新加载
+  useEffect(() => {
+    if (f?.code && historyExpanded) {
+      loadHistoryData(historyRange);
+    }
+  }, [f?.code, historyRange, historyExpanded, loadHistoryData]);
+
+  // 处理时间范围变更
+  const handleHistoryRangeChange = (range) => {
+    setHistoryRange(range);
+  };
+
+  // 刷新历史净值数据
+  const handleRefreshHistory = () => {
+    loadHistoryData(historyRange);
+  };
+
+  // 格式化日期显示
+  const formatHistoryDate = (dateStr) => {
+    const d = dayjs(dateStr);
+    return d.isValid() ? d.format('MM-DD') : dateStr;
+  };
+
+  // 渲染历史净值表格
+  const renderHistoryTable = () => {
+    if (historyLoading) {
+      return (
+        <div style={{ 
+          padding: '48px 20px', 
+          textAlign: 'center',
+          color: 'var(--muted)',
+          fontSize: '14px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '12px'
+        }}>
+          <div style={{ 
+            width: '40px', 
+            height: '40px', 
+            border: '3px solid rgba(34, 211, 238, 0.2)',
+            borderTopColor: 'var(--primary)',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <style jsx>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+          加载历史净值中...
+        </div>
+      );
+    }
+    
+    if (historyError) {
+      return (
+        <div style={{ 
+          padding: '48px 20px', 
+          textAlign: 'center',
+          color: 'var(--danger)',
+          fontSize: '14px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '12px'
+        }}>
+          <div style={{ fontSize: '12px' }}>{historyError}</div>
+          <button
+            onClick={handleRefreshHistory}
+            style={{
+              marginTop: '8px',
+              padding: '8px 16px',
+              background: 'rgba(34, 211, 238, 0.1)',
+              border: '1px solid rgba(34, 211, 238, 0.3)',
+              borderRadius: '8px',
+              color: 'var(--primary)',
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.2s ease'
+            }}
+            className="hover:opacity-80"
+          >
+            <RefreshIcon width="12" height="12" />
+            重试
+          </button>
+        </div>
+      );
+    }
+    
+    if (historyData.length === 0) {
+      return (
+        <div style={{ 
+          padding: '48px 20px', 
+          textAlign: 'center',
+          color: 'var(--muted)',
+          fontSize: '14px'
+        }}>
+          暂无历史净值数据
+        </div>
+      );
+    }
+    
+    return (
+      <div className="scrollbar-y-styled" style={{ 
+        maxHeight: '320px',
+        overflowY: 'auto',
+        borderRadius: '8px',
+        border: '1px solid var(--border)',
+        backgroundColor: theme === 'light' ? 'var(--card)' : 'rgba(11, 18, 32, 0.6)'
+      }}>
+        <table style={{ 
+          width: '100%', 
+          borderCollapse: 'collapse',
+          fontSize: '12px',
+          tableLayout: 'fixed'
+        }}>
+          <thead>
+            <tr style={{ 
+              backgroundColor: theme === 'light' ? 'var(--table-pinned-header-bg)' : 'rgba(255, 255, 255, 0.05)',
+              borderBottom: '1px solid var(--border)',
+              position: 'sticky',
+              top: 0,
+              zIndex: 1
+            }}>
+              <th style={{ 
+                padding: '12px 12px', 
+                textAlign: 'left', 
+                fontWeight: 600,
+                color: 'var(--text)',
+                width: '25%',
+                position: 'sticky',
+                top: 0,
+                backgroundColor: 'inherit',
+                borderRight: '1px solid var(--border)'
+              }}>
+                日期
+              </th>
+              <th style={{ 
+                padding: '12px 12px', 
+                textAlign: 'right', 
+                fontWeight: 600,
+                color: 'var(--text)',
+                width: '25%',
+                position: 'sticky',
+                top: 0,
+                backgroundColor: 'inherit',
+                borderRight: '1px solid var(--border)'
+              }}>
+                单位净值
+              </th>
+              <th style={{ 
+                padding: '12px 12px', 
+                textAlign: 'right', 
+                fontWeight: 600,
+                color: 'var(--text)',
+                width: '25%',
+                position: 'sticky',
+                top: 0,
+                backgroundColor: 'inherit',
+                borderRight: '1px solid var(--border)'
+              }}>
+                累计净值
+              </th>
+              <th style={{ 
+                padding: '12px 12px', 
+                textAlign: 'right', 
+                fontWeight: 600,
+                color: 'var(--text)',
+                width: '25%',
+                position: 'sticky',
+                top: 0,
+                backgroundColor: 'inherit'
+              }}>
+                日涨跌幅
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {historyData.map((item, index) => (
+              <tr 
+                key={index} 
+                style={{ 
+                  borderBottom: '1px solid var(--border)',
+                  backgroundColor: index % 2 === 0 ? 'transparent' : (theme === 'light' ? 'rgba(0, 0, 0, 0.02)' : 'rgba(255, 255, 255, 0.02)'),
+                  transition: 'background-color 0.2s ease',
+                  cursor: 'pointer'
+                }}
+                className="hover:bg-[--table-row-hover-bg]"
+                onClick={() => {
+                  // 可以添加点击行的事件，比如查看详情
+                  console.log('查看净值详情:', item);
+                }}
+              >
+                <td style={{ 
+                  padding: '12px 12px',
+                  color: 'var(--text)',
+                  fontWeight: 500,
+                  borderRight: '1px solid var(--border)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  {formatHistoryDate(item.date)}
+                </td>
+                <td style={{ 
+                  padding: '12px 12px', 
+                  textAlign: 'right',
+                  color: 'var(--text)',
+                  fontWeight: 600,
+                  borderRight: '1px solid var(--border)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  {item.unitNetValue || '--'}
+                </td>
+                <td style={{ 
+                  padding: '12px 12px', 
+                  textAlign: 'right',
+                  color: 'var(--text)',
+                  fontWeight: 600,
+                  borderRight: '1px solid var(--border)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  {item.cumulativeNetValue || item.unitNetValue || '--'}
+                </td>
+                <td style={{ 
+                  padding: '12px 12px', 
+                  textAlign: 'right',
+                  fontWeight: 600,
+                  color: item.isUp ? 'var(--danger)' : item.isDown ? 'var(--success)' : 'var(--text)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  {item.dailyChangeFormatted || '--'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
 
   const style = layoutMode === 'drawer' ? {
     border: 'none',
@@ -485,6 +788,145 @@ export default function FundCard({
           />
         </>
       )}
+
+      {/* 新增：历史净值部分 */}
+      <div style={{ marginTop: '20px' }}>
+        <div
+          style={{ 
+            marginBottom: '12px', 
+            cursor: 'pointer', 
+            userSelect: 'none',
+            padding: '8px 0',
+            borderBottom: '1px solid var(--border)'
+          }}
+          className="title"
+          onClick={() => setHistoryExpanded(!historyExpanded)}
+        >
+          <div className="row" style={{ width: '100%', flex: 1, alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CalendarIcon width="16" height="16" className="muted" />
+              <span style={{ fontWeight: 600, fontSize: '15px' }}>历史净值</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {historyLastUpdated && (
+                <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                  更新于 {dayjs(historyLastUpdated).format('HH:mm')}
+                </span>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRefreshHistory();
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '4px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  color: 'var(--muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title="刷新历史净值"
+                className="hover:bg-[--table-row-hover-bg] hover:text-[--text]"
+              >
+                <RefreshIcon width="14" height="14" />
+              </button>
+              <ChevronIcon
+                width="16"
+                height="16"
+                className="muted"
+                style={{
+                  transform: historyExpanded ? 'rotate(-90deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s ease',
+                }}
+              />
+            </div>
+          </div>
+        </div>
+        
+        <AnimatePresence>
+          {historyExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              style={{ overflow: 'hidden' }}
+            >
+              {/* 日期范围选择器 */}
+              <div style={{ 
+                display: 'flex', 
+                gap: '4px', 
+                marginBottom: '16px',
+                flexWrap: 'wrap'
+              }}>
+                {[
+                  { key: '1m', label: '近1月' },
+                  { key: '3m', label: '近3月' },
+                  { key: '6m', label: '近6月' },
+                  { key: '1y', label: '近1年' },
+                  { key: 'all', label: '全部' }
+                ].map((rangeItem) => (
+                  <button
+                    key={rangeItem.key}
+                    onClick={() => handleHistoryRangeChange(rangeItem.key)}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${
+                        historyRange === rangeItem.key 
+                          ? 'var(--primary)' 
+                          : 'var(--border)'
+                      }`,
+                      background: historyRange === rangeItem.key 
+                        ? 'rgba(34, 211, 238, 0.15)' 
+                        : theme === 'light' 
+                          ? 'rgba(255, 255, 255, 0.9)' 
+                          : 'rgba(255, 255, 255, 0.05)',
+                      color: historyRange === rangeItem.key 
+                        ? 'var(--primary)' 
+                        : 'var(--text)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      fontWeight: historyRange === rangeItem.key ? 600 : 400,
+                      backdropFilter: 'blur(8px)',
+                      flex: '1',
+                      minWidth: '0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px'
+                    }}
+                    className="hover:border-[--primary] hover:text-[--primary]"
+                  >
+                    {rangeItem.label}
+                  </button>
+                ))}
+              </div>
+              
+              {/* 历史净值表格 */}
+              {renderHistoryTable()}
+              
+              {/* 数据说明 */}
+              <div style={{ 
+                marginTop: '12px',
+                fontSize: '11px',
+                color: 'var(--muted)',
+                textAlign: 'center',
+                padding: '8px',
+                borderRadius: '6px',
+                backgroundColor: theme === 'light' ? 'rgba(0, 0, 0, 0.03)' : 'rgba(255, 255, 255, 0.03)'
+              }}>
+                数据来源：东方财富网 | 共{historyData.length}条记录
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </motion.div>
   );
 }
