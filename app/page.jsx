@@ -64,7 +64,8 @@ import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { toast as sonnerToast } from 'sonner';
 import { recordValuation, getAllValuationSeries, clearFund } from './lib/valuationTimeseries';
 import { loadHolidaysForYears, isTradingDay as isDateTradingDay } from './lib/tradingCalendar';
-import { parseFundTextWithLLM, fetchFundData, fetchLatestRelease, fetchShanghaiIndexDate, fetchSmartFundNetValue, searchFunds } from './api/fund';
+import { parseFundTextWithLLM, fetchFundData, fetchLatestRelease, fetchShanghaiIndexDate, fetchSmartFundNetValue, searchFunds, fetchFundHistory } from './api/fund';
+// 注意：新增了 fetchFundHistory
 import packageJson from '../package.json';
 import PcFundTable from './components/PcFundTable';
 import MobileFundTable from './components/MobileFundTable';
