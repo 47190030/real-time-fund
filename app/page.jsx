@@ -73,7 +73,33 @@ import { useFundFuzzyMatcher } from './hooks/useFundFuzzyMatcher';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(isSameOrAfter);
-
+// 切换业绩走势展开状态
+const handleToggleTrendCollapse = (fundCode) => {
+  setCollapsedTrends(prev => {
+    const newSet = new Set(prev);
+    if (newSet.has(fundCode)) {
+      newSet.delete(fundCode);
+    } else {
+      newSet.add(fundCode);
+    }
+    return newSet;
+  });
+};
+const onToggleHistoryCollapse = (code) => {
+  setCollapsedHistory(prev => {
+    const next = new Set(prev);
+    if (next.has(code)) {
+      next.delete(code);
+    } else {
+      next.add(code);
+    }
+    return next;
+  });
+};
+const [collapsedCodes, setCollapsedCodes] = useState(new Set());
+const [collapsedTrends, setCollapsedTrends] = useState(new Set()); // 业绩走势收起状态
+// 新增：历史净值展开状态
+const [collapsedHistory, setCollapsedHistory] = useState(new Set());
 const DEFAULT_TZ = 'Asia/Shanghai';
 const getBrowserTimeZone = () => {
   if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
@@ -4012,6 +4038,8 @@ export default function HomePage() {
                                 favorites={favorites}
                                 sortBy={sortBy}
                                 onReorder={handleReorder}
+                                collapsedHistory={collapsedHistory}
+                                onToggleHistoryCollapse={onToggleHistoryCollapse}
                                 onRemoveFund={(row) => {
                                   if (refreshing) return;
                                   if (!row || !row.code) return;
@@ -4185,6 +4213,8 @@ export default function HomePage() {
                               onRemoveFromGroup={removeFundFromCurrentGroup}
                               onToggleFavorite={toggleFavorite}
                               onRemoveFund={requestRemoveFund}
+                              collapsedHistory={collapsedHistory}  // 传递状态
+                              onToggleHistoryCollapse={onToggleHistoryCollapse} // 传递更新状态的函数
                               onHoldingClick={(fund) => setHoldingModal({ open: true, fund })}
                               onActionClick={(fund) => setActionModal({ open: true, fund })}
                               onPercentModeToggle={(code) =>
