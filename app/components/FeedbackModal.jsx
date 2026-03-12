@@ -114,7 +114,6 @@ export default function FeedbackModal({ onClose, user, onOpenWeChat }) {
             <button className="button" type="submit" disabled={submitting} style={{ width: '100%' }}>
               {submitting ? '发送中...' : '提交反馈'}
             </button>
-            </div>
           </form>
         )}
       </motion.div>
