@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -11,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Stat } from './Common';
 import FundTrendChart from './FundTrendChart';
 import FundIntradayChart from './FundIntradayChart';
-import { fetchFundHistory } from '../api/fund';
 import {
   ChevronIcon,
   ExitIcon,
@@ -36,338 +34,16 @@ const getBrowserTimeZone = () => {
 const TZ = getBrowserTimeZone();
 const toTz = (input) => (input ? dayjs.tz(input, TZ) : dayjs().tz(TZ));
 
-function HistoryNavTable({ fund, theme, isExpanded, onToggleExpand }) {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
-  const [historyData, setHistoryData] = useState([]);
-  const [totalPages, setTotalPages] = useState(1);
-  const [historyRange, setHistoryRange] = useState('1m');
-  
-  const itemsPerPage = 5;
+const formatDisplayDate = (value) => {
+  if (!value) return '-';
 
-  const loadHistoryData = async (range = historyRange) => {
-    if (!fund?.code) return;
-    
-    setIsLoading(true);
-    try {
-      const data = await fetchFundHistory(fund.code, range);
-      if (data && Array.isArray(data)) {
-        const sortedData = data.sort((a, b) => 
-          new Date(b.date) - new Date(a.date)
-        );
-        
-        const processedData = [];
-        for (let i = 0; i < sortedData.length; i++) {
-          const item = { ...sortedData[i] };
-          
-          if (i > 0 && i < sortedData.length) {
-            const prevItem = sortedData[i + 1];
-            if (prevItem && prevItem.value > 0) {
-              const dailyChange = ((item.value - prevItem.value) / prevItem.value) * 100;
-              item.dailyChange = Number(dailyChange.toFixed(2));
-            } else {
-              item.dailyChange = 0;
-            }
-          } else {
-            item.dailyChange = 0;
-          }
-          
-          item.cumulativeNav = item.accumulativeValue || item.value;
-          processedData.push(item);
-        }
-        
-        setHistoryData(processedData);
-        setTotalPages(Math.ceil(processedData.length / itemsPerPage));
-        setCurrentPage(1);
-      } else {
-        setHistoryData([]);
-        setTotalPages(1);
-      }
-    } catch (error) {
-      console.error('获取历史净值数据失败:', error);
-      setHistoryData([]);
-      setTotalPages(1);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const d = toTz(value);
+  if (!d.isValid()) return value;
 
-  useEffect(() => {
-    if (isExpanded && fund?.code) {
-      loadHistoryData(historyRange);
-    }
-  }, [isExpanded, fund?.code, historyRange]);
+  const hasTime = /[T\s]\d{2}:\d{2}/.test(String(value));
 
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedData = historyData.slice(startIndex, startIndex + itemsPerPage);
-
-  return (
-    <div className="history-table-wrapper">
-      <div
-        style={{ 
-          marginBottom: 8, 
-          cursor: 'pointer', 
-          userSelect: 'none',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-        onClick={onToggleExpand}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>历史净值</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-            {isLoading ? '加载中...' : `${historyData.length} 条记录`}
-          </span>
-          <ChevronIcon
-            width="16"
-            height="16"
-            className="muted"
-            style={{
-              transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-              transition: 'transform 0.2s ease',
-            }}
-          />
-        </div>
-      </div>
-
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            style={{ overflow: 'hidden' }}
-          >
-            <div style={{ 
-              display: 'flex', 
-              gap: 4, 
-              marginBottom: 8,
-              justifyContent: 'center',
-              flexWrap: 'wrap'
-            }}>
-              {['1m', '3m', '6m', '1y', '3y', 'all'].map(range => (
-                <button
-                  key={range}
-                  onClick={() => {
-                    setHistoryRange(range);
-                    loadHistoryData(range);
-                  }}
-                  style={{
-                    padding: '4px 8px',
-                    fontSize: 11,
-                    backgroundColor: historyRange === range 
-                      ? (theme === 'light' ? '#3b82f6' : '#2563eb')
-                      : (theme === 'light' ? '#f3f4f6' : '#374151'),
-                    color: historyRange === range 
-                      ? '#ffffff' 
-                      : (theme === 'light' ? '#374151' : '#d1d5db'),
-                    border: `1px solid ${historyRange === range 
-                      ? (theme === 'light' ? '#3b82f6' : '#2563eb')
-                      : (theme === 'light' ? '#d1d5db' : '#4b5563')}`,
-                    borderRadius: 4,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {range === '1m' ? '1个月' : 
-                   range === '3m' ? '3个月' : 
-                   range === '6m' ? '6个月' : 
-                   range === '1y' ? '1年' : 
-                   range === '3y' ? '3年' : '全部'}
-                </button>
-              ))}
-            </div>
-
-            {isLoading ? (
-              <div style={{ 
-                textAlign: 'center', 
-                padding: '20px',
-                color: theme === 'light' ? '#666' : '#aaa'
-              }}>
-                加载历史净值数据中...
-              </div>
-            ) : historyData.length === 0 ? (
-              <div style={{ 
-                textAlign: 'center', 
-                padding: '20px',
-                color: theme === 'light' ? '#666' : '#aaa'
-              }}>
-                暂无历史净值数据
-              </div>
-            ) : (
-              <>
-                <div style={{ 
-                  border: `1px solid ${theme === 'light' ? '#e5e7eb' : '#374151'}`,
-                  borderRadius: 6,
-                  overflow: 'hidden',
-                  marginBottom: 12,
-                }}>
-                  <table style={{
-                    width: '100%',
-                    borderCollapse: 'collapse',
-                    fontSize: 12,
-                  }}>
-                    <thead>
-                      <tr style={{
-                        backgroundColor: theme === 'light' ? '#f9fafb' : '#1f2937',
-                        borderBottom: `1px solid ${theme === 'light' ? '#e5e7eb' : '#374151'}`,
-                      }}>
-                        <th style={{
-                          padding: '8px 12px',
-                          textAlign: 'left',
-                          fontWeight: 600,
-                          fontSize: 11,
-                          color: theme === 'light' ? '#6b7280' : '#9ca3af',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          日期
-                        </th>
-                        <th style={{
-                          padding: '8px 12px',
-                          textAlign: 'right',
-                          fontWeight: 600,
-                          fontSize: 11,
-                          color: theme === 'light' ? '#6b7280' : '#9ca3af',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          单位净值
-                        </th>
-                        <th style={{
-                          padding: '8px 12px',
-                          textAlign: 'right',
-                          fontWeight: 600,
-                          fontSize: 11,
-                          color: theme === 'light' ? '#6b7280' : '#9ca3af',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          累计净值
-                        </th>
-                        <th style={{
-                          padding: '8px 12px',
-                          textAlign: 'right',
-                          fontWeight: 600,
-                          fontSize: 11,
-                          color: theme === 'light' ? '#6b7280' : '#9ca3af',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          日涨跌幅
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedData.map((item, index) => (
-                        <tr key={index} style={{
-                          borderBottom: index < paginatedData.length - 1 
-                            ? `1px solid ${theme === 'light' ? '#f3f4f6' : '#1f2937'}`
-                            : 'none',
-                          backgroundColor: index % 2 === 0 
-                            ? (theme === 'light' ? '#ffffff' : '#111827')
-                            : (theme === 'light' ? '#f9fafb' : '#1a202c'),
-                        }}>
-                          <td style={{
-                            padding: '8px 12px',
-                            fontSize: 12,
-                            color: theme === 'light' ? '#374151' : '#d1d5db',
-                            whiteSpace: 'nowrap',
-                          }}>
-                            {item.date?.replace(/\d{4}-/, '')}
-                          </td>
-                          <td style={{
-                            padding: '8px 12px',
-                            textAlign: 'right',
-                            fontSize: 12,
-                            color: theme === 'light' ? '#374151' : '#d1d5db',
-                          }}>
-                            {item.value?.toFixed(4) || '--'}
-                          </td>
-                          <td style={{
-                            padding: '8px 12px',
-                            textAlign: 'right',
-                            fontSize: 12,
-                            color: theme === 'light' ? '#374151' : '#d1d5db',
-                          }}>
-                            {item.cumulativeNav?.toFixed(4) || '--'}
-                          </td>
-                          <td style={{
-                            padding: '8px 12px',
-                            textAlign: 'right',
-                            fontSize: 12,
-                            fontWeight: 500,
-                            color: item.dailyChange > 0 
-                              ? (theme === 'light' ? '#059669' : '#34d399')
-                              : item.dailyChange < 0 
-                                ? (theme === 'light' ? '#dc2626' : '#f87171')
-                                : (theme === 'light' ? '#6b7280' : '#9ca3af'),
-                          }}>
-                            {item.dailyChange > 0 ? '+' : ''}{item.dailyChange?.toFixed(2) || '0.00'}%
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {totalPages > 1 && (
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    gap: 8,
-                    marginTop: 8,
-                  }}>
-                    <button
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: 12,
-                        backgroundColor: theme === 'light' ? '#f3f4f6' : '#374151',
-                        border: `1px solid ${theme === 'light' ? '#d1d5db' : '#4b5563'}`,
-                        borderRadius: 4,
-                        color: theme === 'light' ? '#374151' : '#d1d5db',
-                        cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                        opacity: currentPage === 1 ? 0.5 : 1,
-                      }}
-                    >
-                      上一页
-                    </button>
-                    
-                    <span style={{
-                      fontSize: 12,
-                      color: theme === 'light' ? '#6b7280' : '#9ca3af',
-                    }}>
-                      {currentPage}/{totalPages}
-                    </span>
-                    
-                    <button
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: 12,
-                        backgroundColor: theme === 'light' ? '#f3f4f6' : '#374151',
-                        border: `1px solid ${theme === 'light' ? '#d1d5db' : '#4b5563'}`,
-                        borderRadius: 4,
-                        color: theme === 'light' ? '#374151' : '#d1d5db',
-                        cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                        opacity: currentPage === totalPages ? 0.5 : 1,
-                      }}
-                    >
-                      下一页
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
+  return hasTime ? d.format('MM-DD HH:mm') : d.format('MM-DD');
+};
 
 export default function FundCard({
   fund: f,
@@ -380,7 +56,6 @@ export default function FundCard({
   valuationSeries,
   collapsedCodes,
   collapsedTrends,
-  collapsedHistory,
   transactions,
   theme,
   isTradingDay,
@@ -394,8 +69,7 @@ export default function FundCard({
   onPercentModeToggle,
   onToggleCollapse,
   onToggleTrendCollapse,
-  onToggleHistoryCollapse,
-  layoutMode = 'card',
+  layoutMode = 'card', // 'card' | 'drawer'，drawer 时前10重仓与业绩走势以 Tabs 展示
   masked = false,
 }) {
   const holding = holdings[f?.code];
@@ -463,7 +137,11 @@ export default function FundCard({
         <div className="actions">
           <div className="badge-v">
             <span>{f.noValuation ? '净值日期' : '估值时间'}</span>
-            <strong>{f.noValuation ? (f.jzrq || '-') : (f.gztime || f.time || '-')}</strong>
+            <strong>
+              {f.noValuation
+                ? formatDisplayDate(f.jzrq)
+                : formatDisplayDate(f.gztime || f.time)}
+            </strong>
           </div>
           <div className="row" style={{ gap: 4 }}>
             <button
@@ -701,7 +379,6 @@ export default function FundCard({
               <TabsTrigger value="holdings">前10重仓股票</TabsTrigger>
             )}
             <TabsTrigger value="trend">业绩走势</TabsTrigger>
-            <TabsTrigger value="history">历史净值</TabsTrigger>
           </TabsList>
           {hasHoldings && (
             <TabsContent value="holdings" className="mt-3 outline-none">
@@ -735,14 +412,6 @@ export default function FundCard({
               transactions={transactions?.[f.code] || []}
               theme={theme}
               hideHeader
-            />
-          </TabsContent>
-          <TabsContent value="history" className="mt-3 outline-none">
-            <HistoryNavTable 
-              fund={f} 
-              theme={theme} 
-              isExpanded={true}
-              onToggleExpand={() => {}}
             />
           </TabsContent>
         </Tabs>
@@ -806,7 +475,6 @@ export default function FundCard({
               </AnimatePresence>
             </>
           )}
-          
           <FundTrendChart
             key={`${f.code}-${theme}`}
             code={f.code}
@@ -814,13 +482,6 @@ export default function FundCard({
             onToggleExpand={() => onToggleTrendCollapse?.(f.code)}
             transactions={transactions?.[f.code] || []}
             theme={theme}
-          />
-          
-          <HistoryNavTable 
-            fund={f} 
-            theme={theme} 
-            isExpanded={!collapsedHistory?.has(f.code)}
-            onToggleExpand={() => onToggleHistoryCollapse?.(f.code)}
           />
         </>
       )}
