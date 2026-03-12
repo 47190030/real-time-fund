@@ -34,7 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CloseIcon, DragIcon, ExitIcon, SettingsIcon, StarIcon, TrashIcon, ResetIcon, HistoryIcon } from './Icons';
+import { CloseIcon, DragIcon, ExitIcon, SettingsIcon, StarIcon, TrashIcon, ResetIcon } from './Icons';
 
 const NON_FROZEN_COLUMN_IDS = [
   'yesterdayChangePercent',
@@ -55,7 +55,6 @@ const COLUMN_HEADERS = {
   holdingAmount: '持仓金额',
   todayProfit: '当日收益',
   holdingProfit: '持有收益',
-  history: '历史净值',
 };
 
 const SortableRowContext = createContext({
@@ -104,6 +103,36 @@ function SortableRow({ row, children, isTableDragging, disabled }) {
   );
 }
 
+/**
+ * PC 端基金列表表格组件（基于 @tanstack/react-table）
+ *
+ * @param {Object} props
+ * @param {Array<Object>} props.data - 表格数据
+ *   每一行推荐结构（字段命名与 page.jsx 中的数据一致）：
+ *   {
+ *     fundName: string;             // 基金名称
+ *     code?: string;                // 基金代码（可选，只用于展示在名称下方）
+ *     latestNav: string|number;     // 最新净值
+ *     estimateNav: string|number;   // 估算净值
+ *     yesterdayChangePercent: string|number; // 昨日涨幅
+ *     estimateChangePercent: string|number;  // 估值涨幅
+ *     holdingAmount: string|number;         // 持仓金额
+ *     todayProfit: string|number;           // 当日收益
+ *     holdingProfit: string|number;         // 持有收益
+ *   }
+ * @param {(row: any) => void} [props.onRemoveFund] - 删除基金的回调
+ * @param {string} [props.currentTab] - 当前分组
+ * @param {Set<string>} [props.favorites] - 自选集合
+ * @param {(row: any) => void} [props.onToggleFavorite] - 添加/取消自选
+ * @param {(row: any) => void} [props.onRemoveFromGroup] - 从当前分组移除
+ * @param {(row: any, meta: { hasHolding: boolean }) => void} [props.onHoldingAmountClick] - 点击持仓金额
+ * @param {boolean} [props.refreshing] - 是否处于刷新状态（控制删除按钮禁用态）
+ * @param {(row: any) => Object} [props.getFundCardProps] - 给定行返回 FundCard 的 props；传入后点击基金名称将用弹框展示卡片详情
+ * @param {React.MutableRefObject<(() => void) | null>} [props.closeDialogRef] - 注入关闭弹框的方法，用于确认删除时关闭
+ * @param {boolean} [props.blockDialogClose] - 为 true 时阻止点击遮罩关闭弹框（如删除确认弹框打开时）
+ * @param {number} [props.stickyTop] - 表头固定时的 top 偏移（与 MobileFundTable 一致，用于适配导航栏、筛选栏等）
+ * @param {boolean} [props.masked] - 是否隐藏持仓相关金额
+ */
 export default function PcFundTable({
   data = [],
   onRemoveFund,
@@ -112,7 +141,7 @@ export default function PcFundTable({
   onToggleFavorite,
   onRemoveFromGroup,
   onHoldingAmountClick,
-  onHoldingProfitClick,
+  onHoldingProfitClick, // 保留以兼容调用方，表格内已不再使用点击切换
   refreshing = false,
   sortBy = 'default',
   onReorder,
@@ -122,8 +151,6 @@ export default function PcFundTable({
   blockDialogClose = false,
   stickyTop = 0,
   masked = false,
-  collapsedHistory,
-  onToggleHistoryCollapse,
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -543,7 +570,8 @@ export default function PcFundTable({
         minSize: 80,
         cell: (info) => {
           const original = info.row.original || {};
-          const date = original.latestNavDate ?? '-';
+          const rawDate = original.latestNavDate ?? '-';
+          const date = typeof rawDate === 'string' && rawDate.length > 5 ? rawDate.slice(5) : rawDate;
           return (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0 }}>
               <FitText style={{ fontWeight: 700 }} maxFontSize={14} minFontSize={10} as="div">
@@ -567,15 +595,20 @@ export default function PcFundTable({
         minSize: 80,
         cell: (info) => {
           const original = info.row.original || {};
-          const date = original.estimateNavDate ?? '-';
+          const rawDate = original.estimateNavDate ?? '-';
+          const date = typeof rawDate === 'string' && rawDate.length > 5 ? rawDate.slice(5) : rawDate;
+          const estimateNav = info.getValue();
+          const hasEstimateNav = estimateNav != null && estimateNav !== '—';
           return (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0 }}>
               <FitText style={{ fontWeight: 700 }} maxFontSize={14} minFontSize={10} as="div">
-                {info.getValue() ?? '—'}
+                {estimateNav ?? '—'}
               </FitText>
-              <span className="muted" style={{ fontSize: '11px' }}>
-                {date}
-              </span>
+              {hasEstimateNav && date && date !== '-' ? (
+                <span className="muted" style={{ fontSize: '11px' }}>
+                  {date}
+                </span>
+              ) : null}
             </div>
           );
         },
@@ -592,7 +625,8 @@ export default function PcFundTable({
         cell: (info) => {
           const original = info.row.original || {};
           const value = original.yesterdayChangeValue;
-          const date = original.yesterdayDate ?? '-';
+          const rawDate = original.yesterdayDate ?? '-';
+          const date = typeof rawDate === 'string' && rawDate.length > 5 ? rawDate.slice(5) : rawDate;
           const cls = value > 0 ? 'up' : value < 0 ? 'down' : '';
           return (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0 }}>
@@ -619,16 +653,21 @@ export default function PcFundTable({
           const original = info.row.original || {};
           const value = original.estimateChangeValue;
           const isMuted = original.estimateChangeMuted;
-          const time = original.estimateTime ?? '-';
+          const rawTime = original.estimateTime ?? '-';
+          const time = typeof rawTime === 'string' && rawTime.length > 5 ? rawTime.slice(5) : rawTime;
           const cls = isMuted ? 'muted' : value > 0 ? 'up' : value < 0 ? 'down' : '';
+          const text = info.getValue();
+          const hasText = text != null && text !== '—';
           return (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0 }}>
               <FitText className={cls} style={{ fontWeight: 700 }} maxFontSize={14} minFontSize={10} as="div">
-                {info.getValue() ?? '—'}
+                {text ?? '—'}
               </FitText>
-              <span className="muted" style={{ fontSize: '11px' }}>
-                {time}
-              </span>
+              {hasText && time && time !== '-' ? (
+                <span className="muted" style={{ fontSize: '11px' }}>
+                  {time}
+                </span>
+              ) : null}
             </div>
           );
         },
@@ -655,7 +694,7 @@ export default function PcFundTable({
               <FitText className={cls} style={{ fontWeight: 700, display: 'block' }} maxFontSize={14} minFontSize={10}>
                 {masked && hasProfit ? '******' : amountStr}
               </FitText>
-              {percentStr && !masked ? (
+              {hasProfit && percentStr && !masked ? (
                 <span className={`${cls} estimate-profit-percent`} style={{ display: 'block', fontSize: '0.75em', opacity: 0.9, fontWeight: 500 }}>
                   <FitText maxFontSize={11} minFontSize={9}>
                     {percentStr}
@@ -856,7 +895,7 @@ export default function PcFundTable({
         },
       },
     ],
-    [currentTab, favorites, refreshing, sortBy, showFullFundName, getFundCardProps],
+    [currentTab, favorites, refreshing, sortBy, showFullFundName, getFundCardProps, masked],
   );
 
   const table = useReactTable({
@@ -972,12 +1011,13 @@ export default function PcFundTable({
           --row-bg: var(--table-row-hover-bg);
         }
 
+        /* 覆盖 grid 布局为 flex 以支持动态列宽 */
         .table-header-row-scroll,
         .table-row-scroll {
           display: flex !important;
           width: fit-content !important;
           min-width: 100%;
-          gap: 0 !important;
+          gap: 0 !important; /* Reset gap because we control width explicitly */
         }
 
         .table-header-cell,
@@ -986,9 +1026,10 @@ export default function PcFundTable({
           box-sizing: border-box;
           padding-left: 8px;
           padding-right: 8px;
-          position: relative;
+          position: relative; /* For resizer */
         }
         
+        /* 拖拽把手样式 */
         .resizer {
           position: absolute;
           right: 0;
@@ -1034,8 +1075,10 @@ export default function PcFundTable({
           opacity: 0;
         }
       `}</style>
+      {/* 表头 */}
       {renderTableHeader(false)}
 
+      {/* 表体 */}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -1148,12 +1191,7 @@ export default function PcFundTable({
             className="flex-1 min-h-0 overflow-y-auto px-6 py-4"
           >
             {cardDialogRow && getFundCardProps ? (
-              <FundCard 
-                {...getFundCardProps(cardDialogRow)} 
-                layoutMode="drawer" 
-                collapsedHistory={collapsedHistory}
-                onToggleHistoryCollapse={onToggleHistoryCollapse}
-              />
+              <FundCard {...getFundCardProps(cardDialogRow)} layoutMode="drawer" />
             ) : null}
           </div>
         </DialogContent>
