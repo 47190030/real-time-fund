@@ -21,7 +21,7 @@ import {
   CalendarIcon,
   RefreshIcon,
 } from './Icons';
-import { fetchFundNetValueHistoryByRange } from '../lib/api';
+import { fetchFundNetValueHistoryByRange } from '../api/fund';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
