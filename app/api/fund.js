@@ -685,21 +685,37 @@ export const fetchFundHistory = async (code, range = '1m') => {
     default: start = start.subtract(1, 'month');
   }
 
-  // 业绩走势统一走 pingzhongdata.Data_netWorthTrend
   try {
     const pz = await fetchFundPingzhongdata(code);
-    const trend = pz?.Data_netWorthTrend;
-    if (Array.isArray(trend) && trend.length) {
+    const netWorthTrend = pz?.Data_netWorthTrend; // 单位净值趋势
+    const acWorthTrend = pz?.Data_ACWorthTrend;   // 累计净值趋势
+    
+    if (Array.isArray(netWorthTrend) && netWorthTrend.length) {
       const startMs = start.startOf('day').valueOf();
-      // end 可能是当日任意时刻，这里用 end-of-day 包含最后一天
       const endMs = end.endOf('day').valueOf();
-      const out = trend
+      
+      const out = netWorthTrend
         .filter((d) => d && typeof d.x === 'number' && d.x >= startMs && d.x <= endMs)
         .map((d) => {
           const value = Number(d.y);
           if (!Number.isFinite(value)) return null;
+          
           const date = dayjs(d.x).tz(TZ).format('YYYY-MM-DD');
-          return { date, value };
+          
+          // 查找对应日期的累计净值
+          let accumulativeValue = value;
+          if (Array.isArray(acWorthTrend)) {
+            const acData = acWorthTrend.find(ac => ac.x === d.x);
+            if (acData && Number.isFinite(Number(acData.y))) {
+              accumulativeValue = Number(acData.y);
+            }
+          }
+          
+          return { 
+            date, 
+            value,  // 单位净值
+            accumulativeValue  // 累计净值
+          };
         })
         .filter(Boolean);
 
