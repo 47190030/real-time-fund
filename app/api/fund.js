@@ -858,6 +858,146 @@ export const fetchFundHistory = async (code, range = '1m') => {
   return [];
 };
 
+// ===================== 新增的3个函数，解决“全部也只有一页”问题 =====================
+
+/**
+ * 【核心函数】批量获取基金所有历史净值（解决分页问题）
+ * 自动遍历所有页面，合并数据后返回。
+ * @param {string} code 基金代码
+ * @returns {Promise} 返回合并后的所有历史净值数据
+ */
+export const fetchAllFundNetValueHistory = async (code) => {
+  if (typeof window === 'undefined') {
+    return { 
+      data: [], 
+      totalPages: 1, 
+      currentPage: 1, 
+      perPage: 100,
+      totalCount: 0
+    };
+  }
+  
+  console.log(`[历史净值] 开始批量获取基金 ${code} 的所有数据...`);
+  
+  try {
+    // 1. 先获取第一页，目的是拿到总页数 (totalPages)
+    const firstPageResult = await fetchFundNetValueHistory(code, 1, 200, '2000-01-01', toTz().format('YYYY-MM-DD'));
+    
+    if (!firstPageResult.data || firstPageResult.data.length === 0) {
+      console.log(`[历史净值] 基金 ${code} 无历史数据。`);
+      return firstPageResult;
+    }
+    
+    const totalPages = firstPageResult.totalPages;
+    const totalCount = firstPageResult.totalCount;
+    
+    console.log(`[历史净值] 基金 ${code} 共有 ${totalCount} 条记录，${totalPages} 页。`);
+    
+    // 2. 如果只有一页，直接返回
+    if (totalPages <= 1) {
+      console.log(`[历史净值] 基金 ${code} 只有1页数据，直接返回。`);
+      return firstPageResult;
+    }
+    
+    // 3. 收集所有数据
+    let allData = [...firstPageResult.data];
+    console.log(`[历史净值] 已获取第1页: ${firstPageResult.data.length} 条`);
+    
+    // 4. 如果有更多页，创建并行请求数组（从第2页开始）
+    if (totalPages > 1) {
+      const pagePromises = [];
+      for (let page = 2; page <= totalPages; page++) {
+        console.log(`[历史净值] 准备并发获取第 ${page} 页...`);
+        pagePromises.push(
+          fetchFundNetValueHistory(code, page, 200, '2000-01-01', toTz().format('YYYY-MM-DD'))
+        );
+      }
+      
+      // 5. 并行发起所有请求，优化加载速度
+      console.log(`[历史净值] 正在并发获取剩余 ${totalPages - 1} 页数据...`);
+      const results = await Promise.allSettled(pagePromises);
+      
+      // 6. 合并所有成功返回的数据
+      results.forEach((result, index) => {
+        const pageNumber = index + 2; // index从0开始，对应第2页
+        if (result.status === 'fulfilled' && result.value && result.value.data) {
+          console.log(`[历史净值] ✓ 成功获取第 ${pageNumber} 页: ${result.value.data.length} 条`);
+          allData = [...allData, ...result.value.data];
+        } else {
+          console.log(`[历史净值] ✗ 获取第 ${pageNumber} 页失败:`, result.reason);
+        }
+      });
+    }
+    
+    console.log(`[历史净值] 批量获取完成！基金 ${code} 总共获取到 ${allData.length} 条历史净值。`);
+    
+    // 7. 返回合并后的数据（标记为1页）
+    return {
+      data: allData,
+      totalPages: 1,        // 关键：合并后，对前端来说只有“1页”
+      currentPage: 1,
+      perPage: allData.length,
+      totalCount: allData.length
+    };
+    
+  } catch (error) {
+    console.error(`[历史净值] 批量获取基金 ${code} 数据失败:`, error);
+    // 降级方案：返回一个空结果，但结构一致
+    return { 
+      data: [], 
+      totalPages: 1, 
+      currentPage: 1, 
+      perPage: 100,
+      totalCount: 0
+    };
+  }
+};
+
+/**
+ * 【辅助函数】根据时间范围获取历史净值（智能版）
+ * 当选择“全部”时，自动调用批量获取函数。
+ * @param {string} code 基金代码
+ * @param {string} range 时间范围 '1m', '3m', '6m', '1y', 'all'
+ * @param {number} page 页码
+ * @param {number} per 每页条数
+ * @returns {Promise}
+ */
+export const fetchFundNetValueHistoryByRangeSmart = async (code, range = '1m', page = 1, per = 50) => {
+  // 如果是“全部”范围，且是第一页，则使用批量获取
+  if (range === 'all' && page === 1) {
+    console.log(`[历史净值] 触发智能获取：“全部”范围，使用批量获取。`);
+    return fetchAllFundNetValueHistory(code);
+  }
+  
+  // 否则，使用原来的分页逻辑
+  return fetchFundNetValueHistoryByRange(code, range, page, per);
+};
+
+/**
+ * 【工具函数】清除历史净值缓存
+ * 可用于强制刷新数据。
+ * @param {string} code 基金代码
+ */
+export const clearFundHistoryCache = (code) => {
+  if (typeof window === 'undefined') return;
+  // 尝试清除可能的缓存键
+  const baseUrl = `https://fundf10.eastmoney.com/F10DataApi.aspx?type=lsjz&code=${code}`;
+  try {
+    // 示例：清除前几页的缓存
+    for (let i = 1; i <= 5; i++) {
+      const cacheKey = `${baseUrl}&page=${i}&per=200&sdate=2000-01-01&edate=${toTz().format('YYYY-MM-DD')}`;
+      clearCachedRequest(cacheKey);
+    }
+    console.log(`[历史净值] 已清除基金 ${code} 的历史净值缓存。`);
+  } catch (e) {
+    console.log('[历史净值] 清除缓存失败:', e);
+  }
+};
+// ===================== 新增函数结束 =====================
+
+// 请确保后面是您原有的 parseFundTextWithLLM 等其他函数...
+// export const parseFundTextWithLLM = async (text) => { ... };
+
 export const parseFundTextWithLLM = async (text) => {
   const apiKey = 'sk-a72c4e279bc62a03cc105be6263d464c';
   if (!apiKey || !text) return null;
