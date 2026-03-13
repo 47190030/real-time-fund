@@ -16,6 +16,7 @@
   --border: #1f2937;
   --table-pinned-header-bg: #2a394b;
   --table-row-hover-bg: #2a394b;
+  --table-row-alt-bg: #1a2535;
   --radius: 0.625rem;
   --background: #0f172a;
   --foreground: #e5e7eb;
@@ -65,6 +66,7 @@
   --border: #e2e8f0;
   --table-pinned-header-bg: #e2e8f0;
   --table-row-hover-bg: #e2e8f0;
+  --table-row-alt-bg: #f8fafc;
   --background: #ffffff;
   --foreground: #0f172a;
   --card-foreground: #0f172a;
@@ -449,9 +451,18 @@ body::before {
   background: #e2e8f0;
 }
 
+[data-theme="light"] .table-row:nth-child(even) {
+  background: var(--table-row-alt-bg);
+}
+
 [data-theme="light"] .table-row-scroll:hover,
 [data-theme="light"] .table-row-scroll.row-hovered {
   background: #e2e8f0;
+}
+
+[data-theme="light"] .table-row-scroll:nth-child(even),
+[data-theme="light"] .table-row-scroll.row-even {
+  background: var(--table-row-alt-bg) !important;
 }
 
 [data-theme="light"] .table-fixed-row.row-hovered {
@@ -1404,6 +1415,11 @@ input[type="number"] {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.table-row-scroll:nth-child(even),
+.table-row-scroll.row-even {
+  background: var(--table-row-alt-bg) !important;
+}
+
 .table-fixed-row.row-hovered {
   background: rgba(255, 255, 255, 0.08);
 }
@@ -1456,6 +1472,10 @@ input[type="number"] {
 
 .table-row:hover {
   background: #2a394b;
+}
+
+.table-row:nth-child(even) {
+  background: var(--table-row-alt-bg);
 }
 
 .table-row:last-child {
