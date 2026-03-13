@@ -18,8 +18,8 @@ import {
   SwitchIcon,
   TrashIcon,
 } from './Icons';
-import { fetchFundHistory } from '@/lib/fund'; // 导入历史净值函数
-import { useState, useEffect } from 'react'; // 导入React Hooks
+import { fetchFundHistory } from '@/app/api/fund'; // 导入历史净值函数
+import { useState, useEffect, useCallback } from 'react'; // 导入React Hooks
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -69,38 +69,13 @@ export default function FundCard({
 
   // 新增状态：历史净值相关
   const [historyRange, setHistoryRange] = useState('1m');
-  const [historyData, setHistoryData] = useState([]);
+  const [allHistoryData, setAllHistoryData] = useState([]); // 存储所有历史数据
+  const [displayedData, setDisplayedData] = useState([]); // 当前显示的数据
+  const [currentPage, setCurrentPage] = useState(1);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [hasMoreData, setHasMoreData] = useState(false);
 
-  // 获取历史净值数据的函数
-  const loadHistoryData = async (code, range) => {
-    if (!code || loadingHistory) return;
-    setLoadingHistory(true);
-    try {
-      const data = await fetchFundHistory(code, range);
-      setHistoryData(data || []);
-    } catch (error) {
-      console.error('获取历史净值失败:', error);
-      setHistoryData([]);
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
-
-  // 当基金代码或时间范围变化时，重新获取数据
-  useEffect(() => {
-    if (layoutMode === 'drawer' && f?.code) {
-      loadHistoryData(f.code, historyRange);
-    }
-  }, [f?.code, historyRange, layoutMode]);
-
-  const style = layoutMode === 'drawer' ? {
-    border: 'none',
-    boxShadow: 'none',
-    paddingLeft: 0,
-    paddingRight: 0,
-    background: theme === 'light'  ? 'rgb(250,250,250)' : 'none',
-  } : {};
+  const PAGE_SIZE = 10; // 每页显示10条数据
 
   // 时间范围配置
   const timeRangeConfig = [
@@ -111,6 +86,83 @@ export default function FundCard({
     { key: '3y', label: '3年' },
     { key: 'all', label: '全部' }
   ];
+
+  // 计算日涨幅
+  const calculateDailyChange = (current, previous) => {
+    if (!previous || previous.value === 0 || current.value === previous.value) {
+      return { value: null, formatted: '--' };
+    }
+    
+    const change = ((current.value - previous.value) / previous.value) * 100;
+    const formatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+    return { value: change, formatted };
+  };
+
+  // 获取历史净值数据的函数
+  const loadHistoryData = useCallback(async (code, range) => {
+    if (!code || loadingHistory) return;
+    setLoadingHistory(true);
+    try {
+      const data = await fetchFundHistory(code, range);
+      
+      // 对数据进行倒序排列，确保最新日期在前面
+      const sortedData = [...(data || [])].sort((a, b) => {
+        return new Date(b.date) - new Date(a.date);
+      });
+
+      // 计算日涨幅
+      const dataWithChange = sortedData.map((item, index) => {
+        const prevItem = sortedData[index + 1]; // 因为倒序排列，所以下一条是前一天的
+        const change = calculateDailyChange(item, prevItem);
+        return {
+          ...item,
+          change: change.value,
+          changeFormatted: change.formatted
+        };
+      });
+
+      setAllHistoryData(dataWithChange);
+      
+      // 初始化显示第一页数据
+      setCurrentPage(1);
+      setDisplayedData(dataWithChange.slice(0, PAGE_SIZE));
+      setHasMoreData(dataWithChange.length > PAGE_SIZE);
+    } catch (error) {
+      console.error('获取历史净值失败:', error);
+      setAllHistoryData([]);
+      setDisplayedData([]);
+      setHasMoreData(false);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [loadingHistory, PAGE_SIZE]);
+
+  // 加载更多数据
+  const loadMoreData = () => {
+    const nextPage = currentPage + 1;
+    const startIndex = 0;
+    const endIndex = nextPage * PAGE_SIZE;
+    const newData = allHistoryData.slice(startIndex, endIndex);
+    
+    setDisplayedData(newData);
+    setCurrentPage(nextPage);
+    setHasMoreData(allHistoryData.length > newData.length);
+  };
+
+  // 当基金代码或时间范围变化时，重新获取数据
+  useEffect(() => {
+    if (layoutMode === 'drawer' && f?.code) {
+      loadHistoryData(f.code, historyRange);
+    }
+  }, [f?.code, historyRange, layoutMode, loadHistoryData]);
+
+  const style = layoutMode === 'drawer' ? {
+    border: 'none',
+    boxShadow: 'none',
+    paddingLeft: 0,
+    paddingRight: 0,
+    background: theme === 'light'  ? 'rgb(250,250,250)' : 'none',
+  } : {};
 
   return (
     <motion.div
@@ -451,7 +503,7 @@ export default function FundCard({
                     className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded whitespace-nowrap flex-shrink-0 ${
                       historyRange === key
                         ? 'bg-accent text-white'
-                        : 'bg-secondary text-foreground'
+                        : 'bg-secondary text-foreground hover:bg-secondary/80'
                     }`}
                     onClick={() => setHistoryRange(key)}
                     disabled={loadingHistory}
@@ -464,7 +516,7 @@ export default function FundCard({
               {/* 数据展示表格 - 添加移动端优化 */}
               {loadingHistory ? (
                 <div className="text-center py-4 text-muted text-sm">加载中...</div>
-              ) : historyData.length > 0 ? (
+              ) : displayedData.length > 0 ? (
                 <div className="overflow-x-auto -mx-2 sm:mx-0">
                   <table className="w-full text-xs sm:text-sm min-w-[300px]">
                     <thead>
@@ -475,37 +527,45 @@ export default function FundCard({
                       </tr>
                     </thead>
                     <tbody>
-                      {historyData.map((item, idx) => {
-                        // 计算日涨幅：基于前一条数据
-                        let dailyChange = '--';
-                        let changeValue = 0;
-                        
-                        if (idx > 0) {
-                          const prevValue = historyData[idx - 1].value;
-                          if (prevValue && prevValue !== 0) {
-                            changeValue = ((item.value - prevValue) / prevValue) * 100;
-                            dailyChange = `${changeValue > 0 ? '+' : ''}${changeValue.toFixed(2)}%`;
+                      {displayedData.map((item, idx) => {
+                        // 获取颜色类名
+                        const getChangeColor = () => {
+                          if (!item.changeFormatted || item.changeFormatted === '--') {
+                            return '';
                           }
-                        }
-                        
-                        // 判断涨跌颜色：正数红色，负数绿色
-                        const getChangeColor = (value) => {
-                          if (value === '--') return '';
-                          return value.startsWith('+') ? 'text-red-500' : 'text-green-500';
+                          return item.changeFormatted.startsWith('+') 
+                            ? 'text-red-500 dark:text-red-400' 
+                            : 'text-green-500 dark:text-green-400';
                         };
 
                         return (
                           <tr key={idx} className="border-b border-border hover:bg-secondary/30 transition-colors">
                             <td className="p-2 whitespace-nowrap">{item.date}</td>
                             <td className="p-2 whitespace-nowrap font-medium">{item.value.toFixed(4)}</td>
-                            <td className={`p-2 whitespace-nowrap font-medium ${getChangeColor(dailyChange)}`}>
-                              {dailyChange}
+                            <td className={`p-2 whitespace-nowrap font-medium ${getChangeColor()}`}>
+                              {item.changeFormatted}
                             </td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
+                  
+                  {/* 加载更多按钮 */}
+                  {hasMoreData && (
+                    <div className="mt-4 text-center">
+                      <button
+                        onClick={loadMoreData}
+                        disabled={loadingHistory}
+                        className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {loadingHistory ? '加载中...' : '加载更多'}
+                      </button>
+                      <div className="text-xs text-muted-foreground mt-2">
+                        已显示 {displayedData.length} 条，共 {allHistoryData.length} 条
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-4 text-muted text-sm">暂无历史数据</div>
