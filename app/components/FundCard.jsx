@@ -74,6 +74,7 @@ export default function FundCard({
   const [currentPage, setCurrentPage] = useState(1);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [hasMoreData, setHasMoreData] = useState(false);
+  const [showHistory, setShowHistory] = useState(false); // 控制历史净值显示
 
   const PAGE_SIZE = 10; // 每页显示10条数据
 
@@ -449,21 +450,12 @@ export default function FundCard({
       })()}
 
       {layoutMode === 'drawer' ? (
-        <Tabs defaultValue={hasHoldings ? 'holdings' : 'trend'} className="w-full">
-          {/* 修复Tab列表：始终显示3个Tab */}
-          <TabsList className="w-full grid grid-cols-3">
-            {hasHoldings && (
-              <TabsTrigger value="holdings">前10重仓股票</TabsTrigger>
-            )}
-            {!hasHoldings && (
-              <TabsTrigger value="holdings" className="hidden">持仓股票</TabsTrigger>
-            )}
-            <TabsTrigger value="trend">业绩走势</TabsTrigger>
-            <TabsTrigger value="history">历史净值</TabsTrigger>
-          </TabsList>
-          
+        <div className="w-full">
           {hasHoldings && (
-            <TabsContent value="holdings" className="mt-3 outline-none">
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-medium">前10重仓股票</h3>
+              </div>
               <div className="list">
                 {f.holdings.map((h, idx) => (
                   <div className="item" key={idx}>
@@ -483,10 +475,14 @@ export default function FundCard({
                   </div>
                 ))}
               </div>
-            </TabsContent>
+            </div>
           )}
           
-          <TabsContent value="trend" className="mt-3 outline-none">
+          {/* 业绩走势部分 */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-medium">业绩走势</h3>
+            </div>
             <FundTrendChart
               key={`${f.code}-${theme}`}
               code={f.code}
@@ -496,89 +492,115 @@ export default function FundCard({
               theme={theme}
               hideHeader
             />
-          </TabsContent>
+          </div>
           
-          {/* 新增历史净值内容面板 */}
-          <TabsContent value="history" className="mt-3 outline-none">
-            <div className="space-y-3">
-              {/* 时间范围选择器 - 添加移动端优化 */}
-              <div className="flex gap-1 sm:gap-2 flex-wrap overflow-x-auto py-1">
-                {timeRangeConfig.map(({ key, label }) => (
-                  <button
-                    key={key}
-                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded whitespace-nowrap flex-shrink-0 ${
-                      historyRange === key
-                        ? 'bg-accent text-white'
-                        : 'bg-secondary text-foreground hover:bg-secondary/80'
-                    }`}
-                    onClick={() => setHistoryRange(key)}
-                    disabled={loadingHistory}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {/* 数据展示表格 - 添加移动端优化 */}
-              {loadingHistory ? (
-                <div className="text-center py-4 text-muted text-sm">加载中...</div>
-              ) : displayedData.length > 0 ? (
-                <div className="overflow-x-auto -mx-2 sm:mx-0">
-                  <table className="w-full text-xs sm:text-sm min-w-[300px]">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日期</th>
-                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">单位净值</th>
-                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日涨幅</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayedData.map((item, idx) => {
-                        // 获取颜色类名
-                        const getChangeColor = () => {
-                          if (!item.changeFormatted || item.changeFormatted === '--') {
-                            return '';
-                          }
-                          return item.changeFormatted.startsWith('+') 
-                            ? 'text-red-500 dark:text-red-400' 
-                            : 'text-green-500 dark:text-green-400';
-                        };
-
-                        return (
-                          <tr key={idx} className="border-b border-border hover:bg-secondary/30 transition-colors">
-                            <td className="p-2 whitespace-nowrap">{item.date}</td>
-                            <td className="p-2 whitespace-nowrap font-medium">{item.value.toFixed(4)}</td>
-                            <td className={`p-2 whitespace-nowrap font-medium ${getChangeColor()}`}>
-                              {item.changeFormatted}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  
-                  {/* 加载更多按钮 */}
-                  {hasMoreData && (
-                    <div className="mt-4 text-center">
-                      <button
-                        onClick={loadMoreData}
-                        disabled={loadingHistory}
-                        className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {loadingHistory ? '加载中...' : '加载更多'}
-                      </button>
-                      <div className="text-xs text-muted-foreground mt-2">
-                        已显示 {displayedData.length} 条，共 {allHistoryData.length} 条
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-4 text-muted text-sm">暂无历史数据</div>
-              )}
+          {/* 历史净值部分 - 放在业绩走势下方 */}
+          <div>
+            <div 
+              className="flex items-center justify-between mb-2 cursor-pointer"
+              onClick={() => setShowHistory(!showHistory)}
+            >
+              <h3 className="text-lg font-medium">历史净值</h3>
+              <ChevronIcon
+                width="16"
+                height="16"
+                className="muted transition-transform duration-200"
+                style={{
+                  transform: showHistory ? 'rotate(0deg)' : 'rotate(-90deg)',
+                }}
+              />
             </div>
-          </TabsContent>
-        </Tabs>
+            
+            <AnimatePresence>
+              {showHistory && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                  style={{ overflow: 'hidden' }}
+                  className="space-y-3"
+                >
+                  {/* 时间范围选择器 - 添加移动端优化 */}
+                  <div className="flex gap-1 sm:gap-2 flex-wrap overflow-x-auto py-1">
+                    {timeRangeConfig.map(({ key, label }) => (
+                      <button
+                        key={key}
+                        className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded whitespace-nowrap flex-shrink-0 transition-colors ${
+                          historyRange === key
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                        }`}
+                        onClick={() => setHistoryRange(key)}
+                        disabled={loadingHistory}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 数据展示表格 - 添加移动端优化 */}
+                  {loadingHistory ? (
+                    <div className="text-center py-4 text-muted text-sm">加载中...</div>
+                  ) : displayedData.length > 0 ? (
+                    <div className="overflow-x-auto -mx-2 sm:mx-0">
+                      <table className="w-full text-xs sm:text-sm min-w-[300px]">
+                        <thead>
+                          <tr className="border-b border-border">
+                            <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日期</th>
+                            <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">单位净值</th>
+                            <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日涨幅</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {displayedData.map((item, idx) => {
+                            // 获取颜色类名 - 调整颜色为更柔和的红色和绿色
+                            const getChangeColor = () => {
+                              if (!item.changeFormatted || item.changeFormatted === '--') {
+                                return 'text-muted-foreground';
+                              }
+                              return item.changeFormatted.startsWith('+') 
+                                ? 'text-rose-500 dark:text-rose-400'  // 使用较柔和的红色
+                                : 'text-emerald-500 dark:text-emerald-400';  // 使用较柔和的绿色
+                            };
+
+                            return (
+                              <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
+                                <td className="p-2 whitespace-nowrap">{item.date}</td>
+                                <td className="p-2 whitespace-nowrap font-medium">{item.value.toFixed(4)}</td>
+                                <td className={`p-2 whitespace-nowrap font-medium ${getChangeColor()}`}>
+                                  {item.changeFormatted}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      
+                      {/* 加载更多按钮 */}
+                      {hasMoreData && (
+                        <div className="mt-4 text-center">
+                          <button
+                            onClick={loadMoreData}
+                            disabled={loadingHistory}
+                            className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {loadingHistory ? '加载中...' : '加载更多'}
+                          </button>
+                          <div className="text-xs text-muted-foreground mt-2">
+                            已显示 {displayedData.length} 条，共 {allHistoryData.length} 条
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-muted text-sm">暂无历史数据</div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
       ) : (
         <>
           {hasHoldings && (
