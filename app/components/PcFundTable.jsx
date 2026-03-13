@@ -369,3 +369,876 @@ export default function PcFundTable({
   useEffect(() => {
     if (closeDialogRef) {
       closeDialogRef.current = () => setCardDialogRow(null);
+      return () => { closeDialogRef.current = null; };
+    }
+  }, [closeDialogRef]);
+
+  useEffect(() => {
+    onRemoveFundRef.current = onRemoveFund;
+    onToggleFavoriteRef.current = onToggleFavorite;
+    onRemoveFromGroupRef.current = onRemoveFromGroup;
+    onHoldingAmountClickRef.current = onHoldingAmountClick;
+  }, [
+    onRemoveFund,
+    onToggleFavorite,
+    onRemoveFromGroup,
+    onHoldingAmountClick,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const getEffectiveStickyTop = () => {
+      const stickySummaryCard = document.querySelector('.group-summary-sticky .group-summary-card');
+      if (!stickySummaryCard) return stickyTop;
+
+      const stickySummaryWrapper = stickySummaryCard.closest('.group-summary-sticky');
+      if (!stickySummaryWrapper) return stickyTop;
+
+      const wrapperRect = stickySummaryWrapper.getBoundingClientRect();
+      const isSummaryStuck = wrapperRect.top <= stickyTop + 1;
+
+      return isSummaryStuck ? stickyTop + stickySummaryWrapper.offsetHeight : stickyTop;
+    };
+
+    const updateVerticalState = () => {
+      const nextStickyTop = getEffectiveStickyTop();
+      setEffectiveStickyTop((prev) => (prev === nextStickyTop ? prev : nextStickyTop));
+
+      const tableEl = tableContainerRef.current;
+      const scrollEl = tableEl?.closest('.table-scroll-area');
+      const targetEl = scrollEl || tableEl;
+      const rect = targetEl?.getBoundingClientRect();
+
+      if (!rect) {
+        setShowPortalHeader(window.scrollY >= nextStickyTop);
+        return;
+      }
+
+      const headerEl = tableEl?.querySelector('.table-header-row');
+      const headerHeight = headerEl?.getBoundingClientRect?.().height ?? 0;
+      const hasPassedHeader = (rect.top + headerHeight) <= nextStickyTop;
+      const hasTableInView = rect.bottom > nextStickyTop;
+
+      setShowPortalHeader(hasPassedHeader && hasTableInView);
+
+      setPortalHorizontal((prev) => {
+        const next = {
+          left: rect.left,
+          right: typeof window !== 'undefined' ? Math.max(0, window.innerWidth - rect.right) : 0,
+        };
+        if (prev.left === next.left && prev.right === next.right) return prev;
+        return next;
+      });
+    };
+
+    const throttledVerticalUpdate = throttle(updateVerticalState, 1000 / 60, { leading: true, trailing: true });
+
+    updateVerticalState();
+    window.addEventListener('scroll', throttledVerticalUpdate, { passive: true });
+    window.addEventListener('resize', throttledVerticalUpdate, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', throttledVerticalUpdate);
+      window.removeEventListener('resize', throttledVerticalUpdate);
+      throttledVerticalUpdate.cancel();
+    };
+  }, [stickyTop]);
+
+  useEffect(() => {
+    const tableEl = tableContainerRef.current;
+    const portalEl = portalHeaderRef.current;
+    const scrollEl = tableEl?.closest('.table-scroll-area');
+    if (!scrollEl || !portalEl) return;
+
+    const syncScrollToPortal = () => {
+      portalEl.scrollLeft = scrollEl.scrollLeft;
+    };
+
+    const syncScrollToTable = () => {
+      scrollEl.scrollLeft = portalEl.scrollLeft;
+    };
+
+    syncScrollToPortal();
+
+    const handleTableScroll = () => syncScrollToPortal();
+    const handlePortalScroll = () => syncScrollToTable();
+
+    scrollEl.addEventListener('scroll', handleTableScroll, { passive: true });
+    portalEl.addEventListener('scroll', handlePortalScroll, { passive: true });
+
+    return () => {
+      scrollEl.removeEventListener('scroll', handleTableScroll);
+      portalEl.removeEventListener('scroll', handlePortalScroll);
+    };
+  }, [showPortalHeader]);
+
+  const FundNameCell = ({ info, showFullFundName, onOpenCardDialog }) => {
+    const original = info.row.original || {};
+    const code = original.code;
+    const isUpdated = original.isUpdated;
+    const hasDca = original.hasDca;
+    const isFavorites = favorites?.has?.(code);
+    const isGroupTab = currentTab && currentTab !== 'all' && currentTab !== 'fav';
+    const rowContext = useContext(SortableRowContext);
+
+    return (
+      <div className="name-cell-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 8 }}>
+        {sortBy === 'default' && (
+          <button
+            className="icon-button drag-handle"
+            ref={rowContext?.setActivatorNodeRef}
+            {...rowContext?.listeners}
+            style={{ cursor: 'grab', width: 20, height: 20, padding: 2, margin: '0', flexShrink: 0, color: 'var(--muted)', background: 'transparent', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            title="拖拽排序"
+            onClick={(e) => e.stopPropagation?.()}
+          >
+            <DragIcon width="16" height="16" />
+          </button>
+        )}
+        {isGroupTab ? (
+          <button
+            className="icon-button fav-button"
+            onClick={(e) => {
+              e.stopPropagation?.();
+              onRemoveFromGroupRef.current?.(original);
+            }}
+            title="从小分组移除"
+            style={{ backgroundColor: 'transparent'}}
+          >
+            <ExitIcon width="18" height="18" style={{ transform: 'rotate(180deg)' }} />
+          </button>
+        ) : (
+          <button
+            className={`icon-button fav-button ${isFavorites ? 'active' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation?.();
+              onToggleFavoriteRef.current?.(original);
+            }}
+            title={isFavorites ? '取消自选' : '添加自选'}
+          >
+            <StarIcon width="18" height="18" filled={isFavorites} />
+          </button>
+        )}
+        <div
+          className="title-text"
+          role={onOpenCardDialog ? 'button' : undefined}
+          tabIndex={onOpenCardDialog ? 0 : undefined}
+          onClick={onOpenCardDialog ? (e) => { e.stopPropagation?.(); onOpenCardDialog(original); } : undefined}
+          onKeyDown={onOpenCardDialog ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenCardDialog(original); } } : undefined}
+          style={onOpenCardDialog ? { cursor: 'pointer' } : undefined}
+          title={onOpenCardDialog ? '查看基金详情' : (original.isUpdated ? '今日净值已更新' : undefined)}
+        >
+          <span
+            className={`name-text ${showFullFundName ? 'show-full' : ''}`}
+            title={isUpdated ? '今日净值已更新' : ''}
+          >
+            {info.getValue() ?? '—'}
+          </span>
+          {code ? <span className="muted code-text">
+            #{code}
+            {hasDca && <span className="dca-indicator">定</span>}
+            {isUpdated && <span className="updated-indicator">✓</span>}
+          </span> : null}
+        </div>
+      </div>
+    );
+  };
+
+  const columns = useMemo(
+    () => [
+      {
+        accessorKey: 'fundName',
+        header: '基金名称',
+        size: 265,
+        minSize: 140,
+        enablePinning: true,
+        cell: (info) => (
+          <FundNameCell
+            info={info}
+            showFullFundName={showFullFundName}
+            onOpenCardDialog={getFundCardProps ? (row) => setCardDialogRow(row) : undefined}
+          />
+        ),
+        meta: {
+          align: 'left',
+          cellClassName: 'name-cell',
+        },
+      },
+      {
+        accessorKey: 'latestNav',
+        header: '最新净值',
+        size: 100,
+        minSize: 80,
+        cell: (info) => {
+          const original = info.row.original || {};
+          const rawDate = original.latestNavDate ?? '-';
+          const date = typeof rawDate === 'string' && rawDate.length > 5 ? rawDate.slice(5) : rawDate;
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0 }}>
+              <FitText style={{ fontWeight: 700 }} maxFontSize={14} minFontSize={10} as="div">
+                {info.getValue() ?? '—'}
+              </FitText>
+              <span className="muted" style={{ fontSize: '11px' }}>
+                {date}
+              </span>
+            </div>
+          );
+        },
+        meta: {
+          align: 'right',
+          cellClassName: 'value-cell',
+        },
+      },
+      {
+        accessorKey: 'estimateNav',
+        header: '估算净值',
+        size: 100,
+        minSize: 80,
+        cell: (info) => {
+          const original = info.row.original || {};
+          const rawDate = original.estimateNavDate ?? '-';
+          const date = typeof rawDate === 'string' && rawDate.length > 5 ? rawDate.slice(5) : rawDate;
+          const estimateNav = info.getValue();
+          const hasEstimateNav = estimateNav != null && estimateNav !== '—';
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0 }}>
+              <FitText style={{ fontWeight: 700 }} maxFontSize={14} minFontSize={10} as="div">
+                {estimateNav ?? '—'}
+              </FitText>
+              {hasEstimateNav && date && date !== '-' ? (
+                <span className="muted" style={{ fontSize: '11px' }}>
+                  {date}
+                </span>
+              ) : null}
+            </div>
+          );
+        },
+        meta: {
+          align: 'right',
+          cellClassName: 'value-cell',
+        },
+      },
+      {
+        accessorKey: 'yesterdayChangePercent',
+        header: '昨日涨幅',
+        size: 135,
+        minSize: 100,
+        cell: (info) => {
+          const original = info.row.original || {};
+          const value = original.yesterdayChangeValue;
+          const rawDate = original.yesterdayDate ?? '-';
+          const date = typeof rawDate === 'string' && rawDate.length > 5 ? rawDate.slice(5) : rawDate;
+          const cls = value > 0 ? 'up' : value < 0 ? 'down' : '';
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0 }}>
+              <FitText className={cls} style={{ fontWeight: 700 }} maxFontSize={14} minFontSize={10} as="div">
+                {info.getValue() ?? '—'}
+              </FitText>
+              <span className="muted" style={{ fontSize: '11px' }}>
+                {date}
+              </span>
+            </div>
+          );
+        },
+        meta: {
+          align: 'right',
+          cellClassName: 'change-cell',
+        },
+      },
+      {
+        accessorKey: 'estimateChangePercent',
+        header: '估值涨幅',
+        size: 135,
+        minSize: 100,
+        cell: (info) => {
+          const original = info.row.original || {};
+          const value = original.estimateChangeValue;
+          const isMuted = original.estimateChangeMuted;
+          const rawTime = original.estimateTime ?? '-';
+          const time = typeof rawTime === 'string' && rawTime.length > 5 ? rawTime.slice(5) : rawTime;
+          const cls = isMuted ? 'muted' : value > 0 ? 'up' : value < 0 ? 'down' : '';
+          const text = info.getValue();
+          const hasText = text != null && text !== '—';
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0 }}>
+              <FitText className={cls} style={{ fontWeight: 700 }} maxFontSize={14} minFontSize={10} as="div">
+                {text ?? '—'}
+              </FitText>
+              {hasText && time && time !== '-' ? (
+                <span className="muted" style={{ fontSize: '11px' }}>
+                  {time}
+                </span>
+              ) : null}
+            </div>
+          );
+        },
+        meta: {
+          align: 'right',
+          cellClassName: 'est-change-cell',
+        },
+      },
+      {
+        accessorKey: 'totalChangePercent',
+        header: '估算收益',
+        size: 135,
+        minSize: 100,
+        cell: (info) => {
+          const original = info.row.original || {};
+          const value = original.estimateProfitValue;
+          const hasProfit = value != null;
+          const cls = hasProfit ? (value > 0 ? 'up' : value < 0 ? 'down' : '') : 'muted';
+          const amountStr = hasProfit ? (original.estimateProfit ?? '') : '—';
+          const percentStr = original.estimateProfitPercent ?? '';
+
+          return (
+            <div style={{ width: '100%' }}>
+              <FitText className={cls} style={{ fontWeight: 700, display: 'block' }} maxFontSize={14} minFontSize={10}>
+                {masked && hasProfit ? <span className="mask-text">******</span> : amountStr}
+              </FitText>
+              {hasProfit && percentStr && !masked ? (
+                <span className={`${cls} estimate-profit-percent`} style={{ display: 'block', fontSize: '0.75em', opacity: 0.9, fontWeight: 500 }}>
+                  <FitText maxFontSize={11} minFontSize={9}>
+                    {percentStr}
+                  </FitText>
+                </span>
+              ) : null}
+            </div>
+          );
+        },
+        meta: {
+          align: 'right',
+          cellClassName: 'total-change-cell',
+        },
+      },
+      {
+        accessorKey: 'holdingAmount',
+        header: '持仓金额',
+        size: 135,
+        minSize: 100,
+        cell: (info) => {
+          const original = info.row.original || {};
+          if (original.holdingAmountValue == null) {
+            return (
+              <div
+                role="button"
+                tabIndex={0}
+                className="muted"
+                title="设置持仓"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '12px', cursor: 'pointer' }}
+                onClick={(e) => {
+                  e.stopPropagation?.();
+                  onHoldingAmountClickRef.current?.(original, { hasHolding: false });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onHoldingAmountClickRef.current?.(original, { hasHolding: false });
+                  }
+                }}
+              >
+                未设置 <SettingsIcon width="12" height="12" />
+              </div>
+            );
+          }
+          return (
+            <div
+              title="点击设置持仓"
+              style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', width: '100%', minWidth: 0 }}
+              onClick={(e) => {
+                e.stopPropagation?.();
+                onHoldingAmountClickRef.current?.(original, { hasHolding: true });
+              }}
+            >
+              <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                <FitText style={{ fontWeight: 700 }} maxFontSize={14} minFontSize={10}>
+                  {masked ? <span className="mask-text">******</span> : (info.getValue() ?? '—')}
+                </FitText>
+              </div>
+              <button
+                className="icon-button no-hover"
+                onClick={(e) => {
+                  e.stopPropagation?.();
+                  onHoldingAmountClickRef.current?.(original, { hasHolding: true });
+                }}
+                title="编辑持仓"
+                style={{ border: 'none', width: '28px', height: '28px', marginLeft: 4, flexShrink: 0, backgroundColor: 'transparent' }}
+              >
+                <SettingsIcon width="14" height="14" />
+              </button>
+            </div>
+          );
+        },
+        meta: {
+          align: 'right',
+          cellClassName: 'holding-amount-cell',
+        },
+      },
+      {
+        accessorKey: 'todayProfit',
+        header: '当日收益',
+        size: 135,
+        minSize: 100,
+        cell: (info) => {
+          const original = info.row.original || {};
+          const value = original.todayProfitValue;
+          const hasProfit = value != null;
+          const cls = hasProfit ? (value > 0 ? 'up' : value < 0 ? 'down' : '') : 'muted';
+          const amountStr = hasProfit ? (info.getValue() ?? '') : '—';
+          const percentStr = original.todayProfitPercent ?? '';
+          const isUpdated = original.isUpdated;
+          return (
+            <div style={{ width: '100%' }}>
+              <FitText className={cls} style={{ fontWeight: 700, display: 'block' }} maxFontSize={14} minFontSize={10}>
+                {masked && hasProfit ? <span className="mask-text">******</span> : amountStr}
+              </FitText>
+              {percentStr && !isUpdated && !masked ? (
+                <span className={`${cls} today-profit-percent`} style={{ display: 'block', fontSize: '0.75em', opacity: 0.9, fontWeight: 500 }}>
+                  <FitText maxFontSize={11} minFontSize={9}>
+                    {percentStr}
+                  </FitText>
+                </span>
+              ) : null}
+            </div>
+          );
+        },
+        meta: {
+          align: 'right',
+          cellClassName: 'profit-cell',
+        },
+      },
+      {
+        accessorKey: 'holdingProfit',
+        header: '持有收益',
+        size: 135,
+        minSize: 100,
+        cell: (info) => {
+          const original = info.row.original || {};
+          const value = original.holdingProfitValue;
+          const hasTotal = value != null;
+          const cls = hasTotal ? (value > 0 ? 'up' : value < 0 ? 'down' : '') : 'muted';
+          const amountStr = hasTotal ? (info.getValue() ?? '') : '—';
+          const percentStr = original.holdingProfitPercent ?? '';
+          return (
+            <div style={{ width: '100%' }}>
+              <FitText className={cls} style={{ fontWeight: 700, display: 'block' }} maxFontSize={14} minFontSize={10}>
+                {masked && hasTotal ? <span className="mask-text">******</span> : amountStr}
+              </FitText>
+              {percentStr && !masked ? (
+                <span className={`${cls} holding-profit-percent`} style={{ display: 'block', fontSize: '0.75em', opacity: 0.9, fontWeight: 500 }}>
+                  <FitText maxFontSize={11} minFontSize={9}>
+                    {percentStr}
+                  </FitText>
+                </span>
+              ) : null}
+            </div>
+          );
+        },
+        meta: {
+          align: 'right',
+          cellClassName: 'holding-cell',
+        },
+      },
+      {
+        id: 'actions',
+        header: () => (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span>操作</span>
+            <button
+              className="icon-button"
+              onClick={(e) => {
+                e.stopPropagation?.();
+                setSettingModalOpen(true);
+              }}
+              title="个性化设置"
+              style={{ border: 'none', width: '24px', height: '24px', backgroundColor: 'transparent', color: 'var(--text)' }}
+            >
+              <SettingsIcon width="14" height="14" />
+            </button>
+          </div>
+        ),
+        size: 80,
+        minSize: 80,
+        maxSize: 80,
+        enableResizing: false,
+        enablePinning: true,
+        meta: {
+          align: 'center',
+          isAction: true,
+          cellClassName: 'action-cell',
+        },
+        cell: (info) => {
+          const original = info.row.original || {};
+
+          const handleClick = (e) => {
+            e.stopPropagation?.();
+            if (refreshing) return;
+            onRemoveFundRef.current?.(original);
+          };
+
+          return (
+            <div className="row" style={{ justifyContent: 'center', gap: 4, padding: '8px 0' }}>
+              <button
+                className="icon-button danger"
+                onClick={handleClick}
+                title="删除"
+                disabled={refreshing}
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  opacity: refreshing ? 0.6 : 1,
+                  cursor: refreshing ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <TrashIcon width="14" height="14" />
+              </button>
+            </div>
+          );
+        },
+      },
+    ],
+    [currentTab, favorites, refreshing, sortBy, showFullFundName, getFundCardProps, masked],
+  );
+
+  const table = useReactTable({
+    data,
+    columns,
+    enableColumnPinning: true,
+    enableColumnResizing: true,
+    columnResizeMode: 'onChange',
+    onColumnSizingChange: (updater) => {
+      setColumnSizing((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        const { actions, ...rest } = next || {};
+        return rest || {};
+      });
+    },
+    state: {
+      columnSizing,
+      columnOrder,
+      columnVisibility,
+    },
+    onColumnOrderChange: (updater) => {
+      setColumnOrder(updater);
+    },
+    onColumnVisibilityChange: (updater) => {
+      setColumnVisibility(updater);
+    },
+    initialState: {
+      columnPinning: {
+        left: ['fundName'],
+        right: ['actions'],
+      },
+    },
+    getCoreRowModel: getCoreRowModel(),
+    defaultColumn: {
+      cell: (info) => info.getValue() ?? '—',
+    },
+  });
+
+  const headerGroup = table.getHeaderGroups()[0];
+
+  const getCommonPinningStyles = (column, isHeader) => {
+    const isPinned = column.getIsPinned();
+    const isNameColumn =
+      column.id === 'fundName' || column.columnDef?.accessorKey === 'fundName';
+    const style = {
+      width: `${column.getSize()}px`,
+    };
+    if (!isPinned) return style;
+
+    const isLeft = isPinned === 'left';
+    const isRight = isPinned === 'right';
+
+    return {
+      ...style,
+      position: 'sticky',
+      left: isLeft ? `${column.getStart('left')}px` : undefined,
+      right: isRight ? `${column.getAfter('right')}px` : undefined,
+      zIndex: isHeader ? 11 : 10,
+      backgroundColor: isHeader ? 'var(--table-pinned-header-bg)' : 'var(--row-bg)',
+      boxShadow: 'none',
+      textAlign: isNameColumn ? 'left' : 'center',
+      justifyContent: isNameColumn ? 'flex-start' : 'center',
+    };
+  };
+
+  const renderTableHeader = (forPortal = false) => {
+    if (!headerGroup) return null;
+    return (
+      <div className="table-header-row table-header-row-scroll">
+        {headerGroup.headers.map((header) => {
+          const style = getCommonPinningStyles(header.column, true);
+          const isNameColumn =
+            header.column.id === 'fundName' ||
+            header.column.columnDef?.accessorKey === 'fundName';
+          const align = isNameColumn ? '' : 'text-center';
+          return (
+            <div
+              key={header.id}
+              className={`table-header-cell ${align}`}
+              style={style}
+            >
+              {header.isPlaceholder
+                ? null
+                : flexRender(
+                  header.column.columnDef.header,
+                  header.getContext(),
+                )}
+              {!forPortal && (
+                <div
+                  onMouseDown={header.column.getCanResize() ? header.getResizeHandler() : undefined}
+                  onTouchStart={header.column.getCanResize() ? header.getResizeHandler() : undefined}
+                  className={`resizer ${header.column.getIsResizing() ? 'isResizing' : ''
+                    } ${header.column.getCanResize() ? '' : 'disabled'}`}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const totalHeaderWidth = headerGroup?.headers?.reduce((acc, h) => acc + h.column.getSize(), 0) ?? 0;
+
+  return (
+    <div className="pc-fund-table" ref={tableContainerRef}>
+      <style>{`
+        .table-row-scroll {
+          --row-bg: var(--bg);
+          background-color: var(--row-bg);
+        }
+        .table-row-scroll:hover {
+          --row-bg: var(--table-row-hover-bg);
+        }
+
+        /* 覆盖 grid 布局为 flex 以支持动态列宽 */
+        .table-header-row-scroll,
+        .table-row-scroll {
+          display: flex !important;
+          width: fit-content !important;
+          min-width: 100%;
+          gap: 0 !important; /* Reset gap because we control width explicitly */
+        }
+
+        .table-header-cell,
+        .table-cell {
+          flex-shrink: 0;
+          box-sizing: border-box;
+          padding-left: 8px;
+          padding-right: 8px;
+          position: relative; /* For resizer */
+        }
+        
+        /* 拖拽把手样式 */
+        .resizer {
+          position: absolute;
+          right: 0;
+          top: 0;
+          height: 100%;
+          width: 8px;
+          background: transparent;
+          cursor: col-resize;
+          user-select: none;
+          touch-action: none;
+          z-index: 20;
+        }
+
+        .resizer::after {
+          content: '';
+          position: absolute;
+          right: 3px;
+          top: 12%;
+          bottom: 12%;
+          width: 2px;
+          background: var(--border);
+          opacity: 0.35;
+          transition: opacity 0.2s, background-color 0.2s, box-shadow 0.2s;
+        }
+
+        .resizer:hover::after {
+          opacity: 1;
+          background: var(--primary);
+          box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.2);
+        }
+        
+        .table-header-cell:hover .resizer::after {
+          opacity: 0.75;
+        }
+
+        .resizer.disabled {
+          cursor: default;
+          background: transparent;
+          pointer-events: none;
+        }
+
+        .resizer.disabled::after {
+          opacity: 0;
+        }
+      `}</style>
+      {/* 表头 */}
+      {renderTableHeader(false)}
+
+      {/* 表体 */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+        modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+      >
+        <SortableContext
+          items={data.map((item) => item.code)}
+          strategy={verticalListSortingStrategy}
+        >
+          <AnimatePresence mode="popLayout">
+            {table.getRowModel().rows.map((row) => (
+              <SortableRow key={row.original.code || row.id} row={row} isTableDragging={!!activeId} disabled={sortBy !== 'default'}>
+                <div
+                  className="table-row table-row-scroll"
+                >
+                  {row.getVisibleCells().map((cell) => {
+                    const columnId = cell.column.id || cell.column.columnDef?.accessorKey;
+                    const isNameColumn = columnId === 'fundName';
+                    const rightAlignedColumns = new Set([
+                      'latestNav',
+                      'estimateNav',
+                      'yesterdayChangePercent',
+                      'estimateChangePercent',
+                      'totalChangePercent',
+                      'holdingAmount',
+                      'todayProfit',
+                      'holdingProfit',
+                    ]);
+                    const align = isNameColumn
+                      ? ''
+                      : rightAlignedColumns.has(columnId)
+                        ? 'text-right'
+                        : 'text-center';
+                    const cellClassName =
+                      (cell.column.columnDef.meta && cell.column.columnDef.meta.cellClassName) || '';
+                    const style = getCommonPinningStyles(cell.column, false);
+                    return (
+                      <div
+                        key={cell.id}
+                        className={`table-cell ${align} ${cellClassName}`}
+                        style={style}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </SortableRow>
+            ))}
+          </AnimatePresence>
+        </SortableContext>
+      </DndContext>
+
+      {table.getRowModel().rows.length === 0 && (
+        <div className="table-row empty-row">
+          <div className="table-cell" style={{ textAlign: 'center' }}>
+            <span className="muted">暂无数据</span>
+          </div>
+        </div>
+      )}
+      {resetConfirmOpen && (
+        <ConfirmModal
+          title="重置列宽"
+          message="是否重置表格列宽为默认值？"
+          icon={<ResetIcon width="20" height="20" className="shrink-0 text-[var(--primary)]" />}
+          confirmVariant="primary"
+          onConfirm={handleResetSizing}
+          onCancel={() => setResetConfirmOpen(false)}
+          confirmText="重置"
+        />
+      )}
+      <PcTableSettingModal
+        open={settingModalOpen}
+        onClose={() => setSettingModalOpen(false)}
+        columns={columnOrder.map((id) => ({ id, header: COLUMN_HEADERS[id] ?? id }))}
+        onColumnReorder={(newOrder) => {
+          setColumnOrder(newOrder);
+        }}
+        columnVisibility={columnVisibility}
+        onToggleColumnVisibility={handleToggleColumnVisibility}
+        onResetColumnOrder={handleResetColumnOrder}
+        onResetColumnVisibility={handleResetColumnVisibility}
+        onResetSizing={() => setResetConfirmOpen(true)}
+        showFullFundName={showFullFundName}
+        onToggleShowFullFundName={handleToggleShowFullFundName}
+      />
+      <Dialog
+        open={!!(cardDialogRow && getFundCardProps)}
+        onOpenChange={(open) => {
+          if (!open && !blockDialogClose) setCardDialogRow(null);
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-2xl max-h-[88vh] flex flex-col p-0 overflow-hidden"
+          onPointerDownOutside={blockDialogClose ? (e) => e.preventDefault() : undefined}
+        >
+          <DialogHeader className="flex-shrink-0 flex flex-row items-center justify-between gap-2 space-y-0 px-6 pb-4 pt-6 text-left border-b border-[var(--border)]">
+            <DialogTitle className="text-base font-semibold text-[var(--text)]">
+              基金详情
+            </DialogTitle>
+          </DialogHeader>
+          <div
+            className="flex-1 min-h-0 overflow-y-auto px-6 py-4"
+          >
+            {cardDialogRow && getFundCardProps ? (
+              <FundCard {...getFundCardProps(cardDialogRow)} layoutMode="drawer" />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {showPortalHeader && ReactDOM.createPortal(
+        <div
+          className="pc-fund-table pc-fund-table-portal-header"
+          ref={portalHeaderRef}
+          style={{
+            position: 'fixed',
+            top: effectiveStickyTop,
+            left: portalHorizontal.left,
+            right: portalHorizontal.right,
+            zIndex: 10,
+            overflowX: 'auto',
+            scrollbarWidth: 'none',
+          }}
+        >
+          <div
+            className="table-header-row table-header-row-scroll"
+            style={{ minWidth: totalHeaderWidth, width: 'fit-content' }}
+          >
+            {headerGroup?.headers.map((header) => {
+              const style = getCommonPinningStyles(header.column, true);
+              const isNameColumn =
+                header.column.id === 'fundName' ||
+                header.column.columnDef?.accessorKey === 'fundName';
+              const align = isNameColumn ? '' : 'text-center';
+              return (
+                <div
+                  key={header.id}
+                  className={`table-header-cell ${align}`}
+                  style={style}
+                >
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(
+                      header.column.columnDef.header,
+                      header.getContext(),
+                    )}
+                </div>
+              );
+            })}
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
