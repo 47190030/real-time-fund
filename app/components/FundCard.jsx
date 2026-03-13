@@ -449,49 +449,53 @@ export default function FundCard({
         );
       })()}
 
-      {/* 在业绩走势图表后添加历史净值模块 */}
-      <FundTrendChart
-        key={`${f.code}-${theme}`}
-        code={f.code}
-        isExpanded={!collapsedTrends?.has(f.code)}
-        onToggleExpand={() => onToggleTrendCollapse?.(f.code)}
-        transactions={transactions?.[f.code] || []}
-        theme={theme}
-      />
+      {/* 业绩走势图表 */}
+      <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+        <FundTrendChart
+          key={`${f.code}-${theme}`}
+          code={f.code}
+          isExpanded={!collapsedTrends?.has(f.code)}
+          onToggleExpand={() => onToggleTrendCollapse?.(f.code)}
+          transactions={transactions?.[f.code] || []}
+          theme={theme}
+        />
+      </div>
 
-      {/* 历史净值模块 - 在业绩走势图表下方 */}
-      <div className="mt-4">
-        <div 
-          className="flex items-center justify-between mb-2 cursor-pointer"
-          onClick={() => setShowHistory(!showHistory)}
-          style={{ marginTop: '16px' }}
-        >
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-medium">历史净值</h3>
-            <span className="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded">
-              {displayedData.length > 0 ? `${displayedData.length}条` : '暂无数据'}
-            </span>
+      {/* 历史净值模块 - 与业绩走势相同的布局 */}
+      <div
+        style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none' }}
+        className="title"
+        onClick={() => setShowHistory(!showHistory)}
+      >
+        <div className="row" style={{ width: '100%', flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>历史净值</span>
+            <ChevronIcon
+              width="16"
+              height="16"
+              className="muted"
+              style={{
+                transform: showHistory
+                  ? 'rotate(0deg)'
+                  : 'rotate(-90deg)',
+                transition: 'transform 0.2s ease',
+              }}
+            />
           </div>
-          <ChevronIcon
-            width="16"
-            height="16"
-            className="muted transition-transform duration-200"
-            style={{
-              transform: showHistory ? 'rotate(0deg)' : 'rotate(-90deg)',
-            }}
-          />
+          <span className="muted"></span>
         </div>
-        
-        <AnimatePresence>
-          {showHistory && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
-              style={{ overflow: 'hidden' }}
-              className="space-y-3"
-            >
+      </div>
+      
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div className="space-y-3">
               {/* 时间范围选择器 */}
               <div className="flex gap-1 sm:gap-2 flex-wrap overflow-x-auto py-1">
                 {timeRangeConfig.map(({ key, label }) => (
@@ -567,15 +571,16 @@ export default function FundCard({
               ) : (
                 <div className="text-center py-4 text-muted text-sm">暂无历史数据</div>
               )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
+      {/* 前10重仓股票 */}
       {hasHoldings && (
         <>
           <div
-            style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none', marginTop: '16px' }}
+            style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none' }}
             className="title"
             onClick={() => onToggleCollapse?.(f.code)}
           >
