@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react'; // 新增：导入状态管理
 import { motion, AnimatePresence } from 'framer-motion';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -19,6 +18,8 @@ import {
   SwitchIcon,
   TrashIcon,
 } from './Icons';
+import { fetchFundHistory } from '@/app/api/fund'; // 导入历史净值函数
+import { useState, useEffect } from 'react'; // 导入React Hooks
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -59,34 +60,39 @@ export default function FundCard({
   onPercentModeToggle,
   onToggleCollapse,
   onToggleTrendCollapse,
-  layoutMode = 'card',
+  layoutMode = 'card', // 'card' | 'drawer'，drawer 时前10重仓与业绩走势以 Tabs 展示
   masked = false,
-  // 新增：历史净值相关Props
-  historyNetValues, // 历史净值数据 [{date, dwjz, ljjz, zzl}, ...]
-  collapsedHistory, // 控制历史净值折叠状态的Set
-  onToggleHistoryCollapse, // 切换历史净值折叠状态的回调
 }) {
   const holding = holdings[f?.code];
   const profit = getHoldingProfit?.(f, holding) ?? null;
   const hasHoldings = f.holdingsIsLastQuarter && Array.isArray(f.holdings) && f.holdings.length > 0;
 
-  // 新增：历史净值分页状态
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10; // 每页显示10条，可按需调整
+  // 新增状态：历史净值相关
+  const [historyRange, setHistoryRange] = useState('1m');
+  const [historyData, setHistoryData] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // 新增：处理分页数据
-  const historyData = Array.isArray(historyNetValues) ? historyNetValues : [];
-  const totalPages = Math.ceil(historyData.length / pageSize);
-  const currentPageData = historyData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-  // 新增：分页切换方法
-  const handlePageChange = (page) => {
-    if (page < 1 || page > totalPages || refreshing) return;
-    setCurrentPage(page);
-    // 可选：切换页码后滚动到历史净值区域
-    const historySection = document.getElementById(`fund-history-${f.code}`);
-    historySection && historySection.scrollIntoView({ behavior: 'smooth' });
+  // 获取历史净值数据的函数
+  const loadHistoryData = async (code, range) => {
+    if (!code || loadingHistory) return;
+    setLoadingHistory(true);
+    try {
+      const data = await fetchFundHistory(code, range);
+      setHistoryData(data || []);
+    } catch (error) {
+      console.error('获取历史净值失败:', error);
+      setHistoryData([]);
+    } finally {
+      setLoadingHistory(false);
+    }
   };
+
+  // 当基金代码或时间范围变化时，重新获取数据
+  useEffect(() => {
+    if (layoutMode === 'drawer' && f?.code) {
+      loadHistoryData(f.code, historyRange);
+    }
+  }, [f?.code, historyRange, layoutMode]);
 
   const style = layoutMode === 'drawer' ? {
     border: 'none',
@@ -105,7 +111,6 @@ export default function FundCard({
         ...style,
       }}
     >
-      {/* 原有头部/净值/持仓模块代码不变 */}
       <div className="row" style={{ marginBottom: 10 }}>
         <div className="title">
           {currentTab !== 'all' && currentTab !== 'fav' ? (
@@ -383,11 +388,13 @@ export default function FundCard({
 
       {layoutMode === 'drawer' ? (
         <Tabs defaultValue={hasHoldings ? 'holdings' : 'trend'} className="w-full">
-          <TabsList className={`w-full ${hasHoldings ? 'grid grid-cols-2' : ''}`}>
+          <TabsList className={`w-full ${hasHoldings ? 'grid grid-cols-3' : 'grid grid-cols-2'}`}>
             {hasHoldings && (
               <TabsTrigger value="holdings">前10重仓股票</TabsTrigger>
             )}
             <TabsTrigger value="trend">业绩走势</TabsTrigger>
+            {/* 新增历史净值标签页 */}
+            <TabsTrigger value="history">历史净值</TabsTrigger>
           </TabsList>
           {hasHoldings && (
             <TabsContent value="holdings" className="mt-3 outline-none">
@@ -422,6 +429,74 @@ export default function FundCard({
               theme={theme}
               hideHeader
             />
+          </TabsContent>
+          {/* 新增历史净值内容面板 */}
+          <TabsContent value="history" className="mt-3 outline-none">
+            <div className="space-y-3">
+              {/* 时间范围选择器 */}
+              <div className="flex gap-2 flex-wrap">
+                {[
+                  { key: '1m', label: '1个月' },
+                  { key: '3m', label: '3个月' },
+                  { key: '6m', label: '6个月' },
+                  { key: '1y', label: '1年' },
+                  { key: '3y', label: '3年' },
+                  { key: 'all', label: '全部' }
+                ].map(({ key, label }) => (
+                  <button
+                    key={key}
+                    className={`px-3 py-1 text-sm rounded ${
+                      historyRange === key
+                        ? 'bg-accent text-white'
+                        : 'bg-secondary text-foreground'
+                    }`}
+                    onClick={() => setHistoryRange(key)}
+                    disabled={loadingHistory}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* 数据展示表格 */}
+              {loadingHistory ? (
+                <div className="text-center py-4 text-muted">加载中...</div>
+              ) : historyData.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-2">日期</th>
+                        <th className="text-left p-2">单位净值</th>
+                        <th className="text-left p-2">日涨幅</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyData.map((item, idx) => {
+                        // 计算日涨幅：基于前一条数据（简单示例，实际可能需要更精确逻辑）
+                        let dailyChange = '--';
+                        if (idx > 0) {
+                          const prevValue = historyData[idx - 1].value;
+                          if (prevValue && prevValue !== 0) {
+                            const change = ((item.value - prevValue) / prevValue) * 100;
+                            dailyChange = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+                          }
+                        }
+                        return (
+                          <tr key={idx} className="border-b hover:bg-secondary/50">
+                            <td className="p-2">{item.date}</td>
+                            <td className="p-2">{item.value.toFixed(4)}</td>
+                            <td className="p-2">{dailyChange}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-4 text-muted">暂无历史数据</div>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
       ) : (
@@ -492,137 +567,6 @@ export default function FundCard({
             transactions={transactions?.[f.code] || []}
             theme={theme}
           />
-
-          {/* 新增：历史净值模块 */}
-          {historyData.length > 0 && (
-            <>
-              <div
-                id={`fund-history-${f.code}`}
-                style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none' }}
-                className="title"
-                onClick={() => onToggleHistoryCollapse?.(f.code)}
-              >
-                <div className="row" style={{ width: '100%', flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>历史净值</span>
-                    <ChevronIcon
-                      width="16"
-                      height="16"
-                      className="muted"
-                      style={{
-                        transform: collapsedHistory?.has(f.code)
-                          ? 'rotate(-90deg)'
-                          : 'rotate(0deg)',
-                        transition: 'transform 0.2s ease',
-                      }}
-                    />
-                  </div>
-                  <span className="muted">共 {historyData.length} 条记录</span>
-                </div>
-              </div>
-              <AnimatePresence>
-                {!collapsedHistory?.has(f.code) && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.3, ease: 'easeInOut' }}
-                    style={{ overflow: 'hidden', marginBottom: 12 }}
-                  >
-                    {/* 历史净值表格 */}
-                    <div className="history-net-value-table" style={{ 
-                      width: '100%', 
-                      borderCollapse: 'collapse',
-                      fontSize: '12px',
-                      marginBottom: 8
-                    }}>
-                      {/* 表格头部 */}
-                      <div style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: '1fr 1fr 1fr 1fr', 
-                        fontWeight: 'bold',
-                        padding: '8px 12px',
-                        background: theme === 'light' ? '#f5f5f5' : '#2a2a2a',
-                        borderRadius: '4px 4px 0 0'
-                      }}>
-                        <div>日期</div>
-                        <div>单位净值</div>
-                        <div>累计净值</div>
-                        <div>日涨跌幅</div>
-                      </div>
-                      {/* 表格内容 */}
-                      {currentPageData.length > 0 ? (
-                        currentPageData.map((item, idx) => (
-                          <div 
-                            key={`${f.code}-history-${idx}`}
-                            style={{ 
-                              display: 'grid', 
-                              gridTemplateColumns: '1fr 1fr 1fr 1fr',
-                              padding: '8px 12px',
-                              borderBottom: `1px solid ${theme === 'light' ? '#eee' : '#333'}`,
-                              backgroundColor: idx % 2 === 0 ? (theme === 'light' ? '#fff' : '#1e1e1e') : (theme === 'light' ? '#fafafa' : '#222'),
-                            }}
-                          >
-                            <div>{item.date || '-'}</div>
-                            <div>{item.dwjz || '-'}</div>
-                            <div>{item.ljjz || '-'}</div>
-                            <div className={item.zzl !== undefined ? (
-                              item.zzl > 0 ? 'up' : item.zzl < 0 ? 'down' : ''
-                            ) : ''}>
-                              {item.zzl !== undefined 
-                                ? `${item.zzl > 0 ? '+' : ''}${Number(item.zzl).toFixed(2)}%` 
-                                : '-'}
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div style={{ padding: '16px', textAlign: 'center', color: 'var(--muted)' }}>
-                          暂无数据
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 分页控件 */}
-                    {totalPages > 1 && (
-                      <div style={{ 
-                        display: 'flex', 
-                        justifyContent: 'center', 
-                        alignItems: 'center', 
-                        gap: 8, 
-                        marginTop: 8 
-                      }}>
-                        <button
-                          className="icon-button"
-                          onClick={() => handlePageChange(currentPage - 1)}
-                          disabled={currentPage === 1 || refreshing}
-                          style={{ 
-                            opacity: currentPage === 1 || refreshing ? 0.6 : 1,
-                            cursor: currentPage === 1 || refreshing ? 'not-allowed' : 'pointer'
-                          }}
-                        >
-                          <ChevronIcon width="14" height="14" style={{ transform: 'rotate(90deg)' }} />
-                        </button>
-                        <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                          第 {currentPage} 页 / 共 {totalPages} 页
-                        </span>
-                        <button
-                          className="icon-button"
-                          onClick={() => handlePageChange(currentPage + 1)}
-                          disabled={currentPage === totalPages || refreshing}
-                          style={{ 
-                            opacity: currentPage === totalPages || refreshing ? 0.6 : 1,
-                            cursor: currentPage === totalPages || refreshing ? 'not-allowed' : 'pointer'
-                          }}
-                        >
-                          <ChevronIcon width="14" height="14" style={{ transform: 'rotate(-90deg)' }} />
-                        </button>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </>
-          )}
         </>
       )}
     </motion.div>
