@@ -568,9 +568,9 @@ export default function FundCard({
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-border">
-                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-sm">日期</th>
-                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-sm">单位净值</th>
-                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-sm">日涨跌幅</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-lg">日期</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-lg">单位净值</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-lg">日涨跌幅</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -586,9 +586,9 @@ export default function FundCard({
 
                         return (
                           <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
-                            <td className="p-3 whitespace-nowrap font-medium text-xs">{item.date}</td>
-                            <td className="p-3 whitespace-nowrap font-medium text-xs">{item.value.toFixed(4)}</td>
-                            <td className={`p-3 whitespace-nowrap font-medium text-xs ${getChangeColor()}`}>
+                            <td className="p-3 whitespace-nowrap font-medium text-base">{item.date}</td>
+                            <td className="p-3 whitespace-nowrap font-medium text-base">{item.value.toFixed(4)}</td>
+                            <td className={`p-3 whitespace-nowrap font-medium text-base ${getChangeColor()}`}>
                               {item.changeFormatted}
                             </td>
                           </tr>
@@ -602,11 +602,11 @@ export default function FundCard({
                       <button
                         onClick={loadMoreData}
                         disabled={loadingHistory}
-                        className="px-4 py-3 text-base bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full"
+                        className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full"
                       >
                         {loadingHistory ? '加载中...' : '加载更多历史净值'}
                       </button>
-                      <div className="text-sm text-muted-foreground mt-2">
+                      <div className="text-xs text-muted-foreground mt-2">
                         已显示 {displayedData.length} 条，共 {allHistoryData.length} 条数据
                       </div>
                     </div>
