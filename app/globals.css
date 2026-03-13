@@ -106,8 +106,10 @@
 
 html,
 body {
+  overscroll-behavior-y: none;
   height: 100%;
   overflow-x: clip;
+  will-change: auto; /* 或者移除任何 will-change: transform */
 }
 
 body {
@@ -1021,6 +1023,12 @@ input[type="number"] {
 
 .down {
   color: var(--success);
+}
+
+.mask-text,
+.up .mask-text,
+.down .mask-text {
+  color: var(--text) !important;
 }
 
 .list {
