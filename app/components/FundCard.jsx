@@ -18,7 +18,7 @@ import {
   SwitchIcon,
   TrashIcon,
 } from './Icons';
-import { fetchFundHistory } from '@/app/api/fund'; // 导入历史净值函数
+import { fetchFundHistory } from '@/lib/fund'; // 导入历史净值函数
 import { useState, useEffect } from 'react'; // 导入React Hooks
 
 dayjs.extend(utc);
@@ -101,6 +101,16 @@ export default function FundCard({
     paddingRight: 0,
     background: theme === 'light'  ? 'rgb(250,250,250)' : 'none',
   } : {};
+
+  // 时间范围配置
+  const timeRangeConfig = [
+    { key: '1m', label: '1个月' },
+    { key: '3m', label: '3个月' },
+    { key: '6m', label: '6个月' },
+    { key: '1y', label: '1年' },
+    { key: '3y', label: '3年' },
+    { key: 'all', label: '全部' }
+  ];
 
   return (
     <motion.div
@@ -433,19 +443,12 @@ export default function FundCard({
           {/* 新增历史净值内容面板 */}
           <TabsContent value="history" className="mt-3 outline-none">
             <div className="space-y-3">
-              {/* 时间范围选择器 */}
-              <div className="flex gap-2 flex-wrap">
-                {[
-                  { key: '1m', label: '1个月' },
-                  { key: '3m', label: '3个月' },
-                  { key: '6m', label: '6个月' },
-                  { key: '1y', label: '1年' },
-                  { key: '3y', label: '3年' },
-                  { key: 'all', label: '全部' }
-                ].map(({ key, label }) => (
+              {/* 时间范围选择器 - 添加移动端优化 */}
+              <div className="flex gap-1 sm:gap-2 flex-wrap overflow-x-auto py-1">
+                {timeRangeConfig.map(({ key, label }) => (
                   <button
                     key={key}
-                    className={`px-3 py-1 text-sm rounded ${
+                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded whitespace-nowrap flex-shrink-0 ${
                       historyRange === key
                         ? 'bg-accent text-white'
                         : 'bg-secondary text-foreground'
@@ -458,35 +461,46 @@ export default function FundCard({
                 ))}
               </div>
 
-              {/* 数据展示表格 */}
+              {/* 数据展示表格 - 添加移动端优化 */}
               {loadingHistory ? (
-                <div className="text-center py-4 text-muted">加载中...</div>
+                <div className="text-center py-4 text-muted text-sm">加载中...</div>
               ) : historyData.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                <div className="overflow-x-auto -mx-2 sm:mx-0">
+                  <table className="w-full text-xs sm:text-sm min-w-[300px]">
                     <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-2">日期</th>
-                        <th className="text-left p-2">单位净值</th>
-                        <th className="text-left p-2">日涨幅</th>
+                      <tr className="border-b border-border">
+                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日期</th>
+                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">单位净值</th>
+                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日涨幅</th>
                       </tr>
                     </thead>
                     <tbody>
                       {historyData.map((item, idx) => {
-                        // 计算日涨幅：基于前一条数据（简单示例，实际可能需要更精确逻辑）
+                        // 计算日涨幅：基于前一条数据
                         let dailyChange = '--';
+                        let changeValue = 0;
+                        
                         if (idx > 0) {
                           const prevValue = historyData[idx - 1].value;
                           if (prevValue && prevValue !== 0) {
-                            const change = ((item.value - prevValue) / prevValue) * 100;
-                            dailyChange = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+                            changeValue = ((item.value - prevValue) / prevValue) * 100;
+                            dailyChange = `${changeValue > 0 ? '+' : ''}${changeValue.toFixed(2)}%`;
                           }
                         }
+                        
+                        // 判断涨跌颜色：正数红色，负数绿色
+                        const getChangeColor = (value) => {
+                          if (value === '--') return '';
+                          return value.startsWith('+') ? 'text-red-500' : 'text-green-500';
+                        };
+
                         return (
-                          <tr key={idx} className="border-b hover:bg-secondary/50">
-                            <td className="p-2">{item.date}</td>
-                            <td className="p-2">{item.value.toFixed(4)}</td>
-                            <td className="p-2">{dailyChange}</td>
+                          <tr key={idx} className="border-b border-border hover:bg-secondary/30 transition-colors">
+                            <td className="p-2 whitespace-nowrap">{item.date}</td>
+                            <td className="p-2 whitespace-nowrap font-medium">{item.value.toFixed(4)}</td>
+                            <td className={`p-2 whitespace-nowrap font-medium ${getChangeColor(dailyChange)}`}>
+                              {dailyChange}
+                            </td>
                           </tr>
                         );
                       })}
@@ -494,7 +508,7 @@ export default function FundCard({
                   </table>
                 </div>
               ) : (
-                <div className="text-center py-4 text-muted">暂无历史数据</div>
+                <div className="text-center py-4 text-muted text-sm">暂无历史数据</div>
               )}
             </div>
           </TabsContent>
