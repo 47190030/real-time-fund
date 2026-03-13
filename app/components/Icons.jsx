@@ -1,5 +1,7 @@
+// app/components/Icons.jsx
 'use client';
 
+// CalendarIcon - 只保留一个定义
 export const CalendarIcon = ({ width = 16, height = 16, ...props }) => (
   <svg
     width={width}
@@ -19,6 +21,40 @@ export const CalendarIcon = ({ width = 16, height = 16, ...props }) => (
   </svg>
 );
 
+// 分页图标
+export const ChevronLeftIcon = ({ width = 16, height = 16, ...props }) => (
+  <svg
+    width={width}
+    height={height}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    {...props}
+  >
+    <polyline points="15 18 9 12 15 6"></polyline>
+  </svg>
+);
+
+export const ChevronRightIcon = ({ width = 16, height = 16, ...props }) => (
+  <svg
+    width={width}
+    height={height}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    {...props}
+  >
+    <polyline points="9 18 15 12 9 6"></polyline>
+  </svg>
+);
+
+// 保持其他图标不变
 export function PlusIcon(props) {
   return (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
