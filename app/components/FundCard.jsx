@@ -18,8 +18,8 @@ import {
   SwitchIcon,
   TrashIcon,
 } from './Icons';
-import { fetchFundHistory } from '@/app/api/fund'; // 导入历史净值函数
-import { useState, useEffect, useCallback } from 'react'; // 导入React Hooks
+import { fetchFundHistory } from '@/app/api/fund';
+import { useState, useEffect, useCallback } from 'react';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -60,25 +60,23 @@ export default function FundCard({
   onPercentModeToggle,
   onToggleCollapse,
   onToggleTrendCollapse,
-  layoutMode = 'card', // 'card' | 'drawer'，drawer 时前10重仓与业绩走势以 Tabs 展示
+  layoutMode = 'card',
   masked = false,
 }) {
   const holding = holdings[f?.code];
   const profit = getHoldingProfit?.(f, holding) ?? null;
   const hasHoldings = f.holdingsIsLastQuarter && Array.isArray(f.holdings) && f.holdings.length > 0;
 
-  // 新增状态：历史净值相关
-  const [showHistory, setShowHistory] = useState(false); // 控制历史净值显示
+  const [showHistory, setShowHistory] = useState(false);
   const [historyRange, setHistoryRange] = useState('1m');
-  const [allHistoryData, setAllHistoryData] = useState([]); // 存储所有历史数据
-  const [displayedData, setDisplayedData] = useState([]); // 当前显示的数据
+  const [allHistoryData, setAllHistoryData] = useState([]);
+  const [displayedData, setDisplayedData] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [hasMoreData, setHasMoreData] = useState(false);
 
-  const PAGE_SIZE = 5; // 每页显示5条数据
+  const PAGE_SIZE = 5;
 
-  // 时间范围配置
   const timeRangeConfig = [
     { key: '1m', label: '1个月' },
     { key: '3m', label: '3个月' },
@@ -88,32 +86,28 @@ export default function FundCard({
     { key: 'all', label: '全部' }
   ];
 
-  // 计算日涨幅
   const calculateDailyChange = (current, previous) => {
     if (!previous || previous.value === 0 || current.value === previous.value) {
       return { value: null, formatted: '--' };
     }
-    
+    
     const change = ((current.value - previous.value) / previous.value) * 100;
     const formatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
     return { value: change, formatted };
   };
 
-  // 获取历史净值数据的函数
   const loadHistoryData = useCallback(async (code, range) => {
     if (!code || loadingHistory) return;
     setLoadingHistory(true);
     try {
       const data = await fetchFundHistory(code, range);
-      
-      // 对数据进行倒序排列，确保最新日期在前面
+      
       const sortedData = [...(data || [])].sort((a, b) => {
         return new Date(b.date) - new Date(a.date);
       });
 
-      // 计算日涨幅
       const dataWithChange = sortedData.map((item, index) => {
-        const prevItem = sortedData[index + 1]; // 因为倒序排列，所以下一条是前一天的
+        const prevItem = sortedData[index + 1];
         const change = calculateDailyChange(item, prevItem);
         return {
           ...item,
@@ -123,8 +117,7 @@ export default function FundCard({
       });
 
       setAllHistoryData(dataWithChange);
-      
-      // 初始化显示第一页数据（5条）
+      
       setCurrentPage(1);
       setDisplayedData(dataWithChange.slice(0, PAGE_SIZE));
       setHasMoreData(dataWithChange.length > PAGE_SIZE);
@@ -138,19 +131,17 @@ export default function FundCard({
     }
   }, [loadingHistory, PAGE_SIZE]);
 
-  // 加载更多数据
   const loadMoreData = () => {
     const nextPage = currentPage + 1;
     const startIndex = 0;
     const endIndex = nextPage * PAGE_SIZE;
     const newData = allHistoryData.slice(startIndex, endIndex);
-    
+    
     setDisplayedData(newData);
     setCurrentPage(nextPage);
     setHasMoreData(allHistoryData.length > newData.length);
   };
 
-  // 当基金代码或时间范围变化时，重新获取数据
   useEffect(() => {
     if (f?.code) {
       loadHistoryData(f.code, historyRange);
@@ -449,7 +440,6 @@ export default function FundCard({
         );
       })()}
 
-      {/* 1. 前10重仓股票 - 第一位 */}
       {hasHoldings && (
         <>
           <div
@@ -509,7 +499,6 @@ export default function FundCard({
         </>
       )}
 
-      {/* 2. 业绩走势 - 第二位 */}
       <div style={{ marginTop: '16px', marginBottom: '16px' }}>
         <FundTrendChart
           key={`${f.code}-${theme}`}
@@ -521,7 +510,6 @@ export default function FundCard({
         />
       </div>
 
-      {/* 3. 历史净值 - 第三位，恢复折叠/展开和加载更多按钮 */}
       <div
         style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none' }}
         className="title"
@@ -545,7 +533,7 @@ export default function FundCard({
           <span className="muted"></span>
         </div>
       </div>
-      
+      
       <AnimatePresence>
         {showHistory && (
           <motion.div
@@ -556,7 +544,6 @@ export default function FundCard({
             style={{ overflow: 'hidden' }}
           >
             <div className="space-y-3">
-              {/* 时间范围选择器 */}
               <div className="flex gap-1 sm:gap-2 flex-wrap overflow-x-auto py-1">
                 {timeRangeConfig.map(({ key, label }) => (
                   <button
@@ -574,36 +561,34 @@ export default function FundCard({
                 ))}
               </div>
 
-              {/* 数据展示表格 */}
               {loadingHistory ? (
-                <div className="text-center py-4 text-muted text-sm">加载中...</div>
+                <div className="text-center py-4 text-muted text-base">加载中...</div>
               ) : displayedData.length > 0 ? (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs sm:text-sm">
+                  <table className="w-full">
                     <thead>
                       <tr className="border-b border-border">
-                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日期</th>
-                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">单位净值</th>
-                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日涨幅</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-sm">日期</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-sm">单位净值</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-sm">日涨跌幅</th>
                       </tr>
                     </thead>
                     <tbody>
                       {displayedData.map((item, idx) => {
-                        // 获取颜色类名 - 调整为适合深色背景的颜色
                         const getChangeColor = () => {
                           if (!item.changeFormatted || item.changeFormatted === '--') {
                             return 'text-muted-foreground';
                           }
-                          return item.changeFormatted.startsWith('+') 
-                            ? 'text-red-400 dark:text-red-300'  // 亮红色
-                            : 'text-green-400 dark:text-green-300';  // 亮绿色
+                          return item.changeFormatted.startsWith('+') 
+                            ? 'text-red-400 dark:text-red-300'
+                            : 'text-green-400 dark:text-green-300';
                         };
 
                         return (
                           <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
-                            <td className="p-2 whitespace-nowrap">{item.date}</td>
-                            <td className="p-2 whitespace-nowrap font-medium">{item.value.toFixed(4)}</td>
-                            <td className={`p-2 whitespace-nowrap font-medium ${getChangeColor()}`}>
+                            <td className="p-3 whitespace-nowrap font-medium text-xs">{item.date}</td>
+                            <td className="p-3 whitespace-nowrap font-medium text-xs">{item.value.toFixed(4)}</td>
+                            <td className={`p-3 whitespace-nowrap font-medium text-xs ${getChangeColor()}`}>
                               {item.changeFormatted}
                             </td>
                           </tr>
@@ -611,25 +596,24 @@ export default function FundCard({
                       })}
                     </tbody>
                   </table>
-                  
-                  {/* 加载更多按钮 - 恢复原来的加载更多按钮 */}
+                  
                   {hasMoreData && (
                     <div className="mt-4 text-center">
                       <button
                         onClick={loadMoreData}
                         disabled={loadingHistory}
-                        className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full"
+                        className="px-4 py-3 text-base bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full"
                       >
                         {loadingHistory ? '加载中...' : '加载更多历史净值'}
                       </button>
-                      <div className="text-xs text-muted-foreground mt-2">
+                      <div className="text-sm text-muted-foreground mt-2">
                         已显示 {displayedData.length} 条，共 {allHistoryData.length} 条数据
                       </div>
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="text-center py-4 text-muted text-sm">暂无历史数据</div>
+                <div className="text-center py-4 text-muted text-base">暂无历史数据</div>
               )}
             </div>
           </motion.div>
