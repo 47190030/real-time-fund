@@ -450,14 +450,18 @@ export default function FundCard({
 
       {layoutMode === 'drawer' ? (
         <Tabs defaultValue={hasHoldings ? 'holdings' : 'trend'} className="w-full">
-          <TabsList className={`w-full ${hasHoldings ? 'grid grid-cols-3' : 'grid grid-cols-2'}`}>
+          {/* 修复Tab列表：始终显示3个Tab */}
+          <TabsList className="w-full grid grid-cols-3">
             {hasHoldings && (
               <TabsTrigger value="holdings">前10重仓股票</TabsTrigger>
             )}
+            {!hasHoldings && (
+              <TabsTrigger value="holdings" className="hidden">持仓股票</TabsTrigger>
+            )}
             <TabsTrigger value="trend">业绩走势</TabsTrigger>
-            {/* 新增历史净值标签页 */}
             <TabsTrigger value="history">历史净值</TabsTrigger>
           </TabsList>
+          
           {hasHoldings && (
             <TabsContent value="holdings" className="mt-3 outline-none">
               <div className="list">
@@ -481,6 +485,7 @@ export default function FundCard({
               </div>
             </TabsContent>
           )}
+          
           <TabsContent value="trend" className="mt-3 outline-none">
             <FundTrendChart
               key={`${f.code}-${theme}`}
@@ -492,6 +497,7 @@ export default function FundCard({
               hideHeader
             />
           </TabsContent>
+          
           {/* 新增历史净值内容面板 */}
           <TabsContent value="history" className="mt-3 outline-none">
             <div className="space-y-3">
