@@ -68,15 +68,15 @@ export default function FundCard({
   const hasHoldings = f.holdingsIsLastQuarter && Array.isArray(f.holdings) && f.holdings.length > 0;
 
   // 新增状态：历史净值相关
+  const [showHistory, setShowHistory] = useState(false); // 控制历史净值显示
   const [historyRange, setHistoryRange] = useState('1m');
   const [allHistoryData, setAllHistoryData] = useState([]); // 存储所有历史数据
   const [displayedData, setDisplayedData] = useState([]); // 当前显示的数据
   const [currentPage, setCurrentPage] = useState(1);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [hasMoreData, setHasMoreData] = useState(false);
-  const [showHistory, setShowHistory] = useState(false); // 控制历史净值显示
 
-  const PAGE_SIZE = 10; // 每页显示10条数据
+  const PAGE_SIZE = 5; // 每页显示5条数据
 
   // 时间范围配置
   const timeRangeConfig = [
@@ -124,7 +124,7 @@ export default function FundCard({
 
       setAllHistoryData(dataWithChange);
       
-      // 初始化显示第一页数据
+      // 初始化显示第一页数据（5条）
       setCurrentPage(1);
       setDisplayedData(dataWithChange.slice(0, PAGE_SIZE));
       setHasMoreData(dataWithChange.length > PAGE_SIZE);
@@ -152,10 +152,10 @@ export default function FundCard({
 
   // 当基金代码或时间范围变化时，重新获取数据
   useEffect(() => {
-    if (layoutMode === 'drawer' && f?.code) {
+    if (f?.code) {
       loadHistoryData(f.code, historyRange);
     }
-  }, [f?.code, historyRange, layoutMode, loadHistoryData]);
+  }, [f?.code, historyRange, loadHistoryData]);
 
   const style = layoutMode === 'drawer' ? {
     border: 'none',
@@ -449,226 +449,185 @@ export default function FundCard({
         );
       })()}
 
-      {layoutMode === 'drawer' ? (
-        <div className="w-full">
-          {hasHoldings && (
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-medium">前10重仓股票</h3>
-              </div>
-              <div className="list">
-                {f.holdings.map((h, idx) => (
-                  <div className="item" key={idx}>
-                    <span className="name">{h.name}</span>
-                    <div className="values">
-                      {isNumber(h.change) && (
-                        <span
-                          className={`badge ${h.change > 0 ? 'up' : h.change < 0 ? 'down' : ''}`}
-                          style={{ marginRight: 8 }}
-                        >
-                          {h.change > 0 ? '+' : ''}
-                          {h.change.toFixed(2)}%
-                        </span>
-                      )}
-                      <span className="weight">{h.weight}</span>
-                    </div>
-                  </div>
+      {/* 在业绩走势图表后添加历史净值模块 */}
+      <FundTrendChart
+        key={`${f.code}-${theme}`}
+        code={f.code}
+        isExpanded={!collapsedTrends?.has(f.code)}
+        onToggleExpand={() => onToggleTrendCollapse?.(f.code)}
+        transactions={transactions?.[f.code] || []}
+        theme={theme}
+      />
+
+      {/* 历史净值模块 - 在业绩走势图表下方 */}
+      <div className="mt-4">
+        <div 
+          className="flex items-center justify-between mb-2 cursor-pointer"
+          onClick={() => setShowHistory(!showHistory)}
+          style={{ marginTop: '16px' }}
+        >
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-medium">历史净值</h3>
+            <span className="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded">
+              {displayedData.length > 0 ? `${displayedData.length}条` : '暂无数据'}
+            </span>
+          </div>
+          <ChevronIcon
+            width="16"
+            height="16"
+            className="muted transition-transform duration-200"
+            style={{
+              transform: showHistory ? 'rotate(0deg)' : 'rotate(-90deg)',
+            }}
+          />
+        </div>
+        
+        <AnimatePresence>
+          {showHistory && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              style={{ overflow: 'hidden' }}
+              className="space-y-3"
+            >
+              {/* 时间范围选择器 */}
+              <div className="flex gap-1 sm:gap-2 flex-wrap overflow-x-auto py-1">
+                {timeRangeConfig.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded whitespace-nowrap flex-shrink-0 transition-colors ${
+                      historyRange === key
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                    }`}
+                    onClick={() => setHistoryRange(key)}
+                    disabled={loadingHistory}
+                  >
+                    {label}
+                  </button>
                 ))}
               </div>
-            </div>
-          )}
-          
-          {/* 业绩走势部分 */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-medium">业绩走势</h3>
-            </div>
-            <FundTrendChart
-              key={`${f.code}-${theme}`}
-              code={f.code}
-              isExpanded
-              onToggleExpand={() => onToggleTrendCollapse?.(f.code)}
-              transactions={transactions?.[f.code] || []}
-              theme={theme}
-              hideHeader
-            />
-          </div>
-          
-          {/* 历史净值部分 - 放在业绩走势下方 */}
-          <div>
-            <div 
-              className="flex items-center justify-between mb-2 cursor-pointer"
-              onClick={() => setShowHistory(!showHistory)}
-            >
-              <h3 className="text-lg font-medium">历史净值</h3>
-              <ChevronIcon
-                width="16"
-                height="16"
-                className="muted transition-transform duration-200"
-                style={{
-                  transform: showHistory ? 'rotate(0deg)' : 'rotate(-90deg)',
-                }}
-              />
-            </div>
-            
-            <AnimatePresence>
-              {showHistory && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.3, ease: 'easeInOut' }}
-                  style={{ overflow: 'hidden' }}
-                  className="space-y-3"
-                >
-                  {/* 时间范围选择器 - 添加移动端优化 */}
-                  <div className="flex gap-1 sm:gap-2 flex-wrap overflow-x-auto py-1">
-                    {timeRangeConfig.map(({ key, label }) => (
-                      <button
-                        key={key}
-                        className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded whitespace-nowrap flex-shrink-0 transition-colors ${
-                          historyRange === key
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                        }`}
-                        onClick={() => setHistoryRange(key)}
-                        disabled={loadingHistory}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
 
-                  {/* 数据展示表格 - 添加移动端优化 */}
-                  {loadingHistory ? (
-                    <div className="text-center py-4 text-muted text-sm">加载中...</div>
-                  ) : displayedData.length > 0 ? (
-                    <div className="overflow-x-auto -mx-2 sm:mx-0">
-                      <table className="w-full text-xs sm:text-sm min-w-[300px]">
-                        <thead>
-                          <tr className="border-b border-border">
-                            <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日期</th>
-                            <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">单位净值</th>
-                            <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日涨幅</th>
+              {/* 数据展示表格 */}
+              {loadingHistory ? (
+                <div className="text-center py-4 text-muted text-sm">加载中...</div>
+              ) : displayedData.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs sm:text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日期</th>
+                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">单位净值</th>
+                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日涨幅</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedData.map((item, idx) => {
+                        // 获取颜色类名 - 调整为适合深色背景的颜色
+                        const getChangeColor = () => {
+                          if (!item.changeFormatted || item.changeFormatted === '--') {
+                            return 'text-muted-foreground';
+                          }
+                          return item.changeFormatted.startsWith('+') 
+                            ? 'text-red-400 dark:text-red-300'  // 亮红色
+                            : 'text-green-400 dark:text-green-300';  // 亮绿色
+                        };
+
+                        return (
+                          <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
+                            <td className="p-2 whitespace-nowrap">{item.date}</td>
+                            <td className="p-2 whitespace-nowrap font-medium">{item.value.toFixed(4)}</td>
+                            <td className={`p-2 whitespace-nowrap font-medium ${getChangeColor()}`}>
+                              {item.changeFormatted}
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {displayedData.map((item, idx) => {
-                            // 获取颜色类名 - 调整颜色为更柔和的红色和绿色
-                            const getChangeColor = () => {
-                              if (!item.changeFormatted || item.changeFormatted === '--') {
-                                return 'text-muted-foreground';
-                              }
-                              return item.changeFormatted.startsWith('+') 
-                                ? 'text-rose-500 dark:text-rose-400'  // 使用较柔和的红色
-                                : 'text-emerald-500 dark:text-emerald-400';  // 使用较柔和的绿色
-                            };
-
-                            return (
-                              <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
-                                <td className="p-2 whitespace-nowrap">{item.date}</td>
-                                <td className="p-2 whitespace-nowrap font-medium">{item.value.toFixed(4)}</td>
-                                <td className={`p-2 whitespace-nowrap font-medium ${getChangeColor()}`}>
-                                  {item.changeFormatted}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                      
-                      {/* 加载更多按钮 */}
-                      {hasMoreData && (
-                        <div className="mt-4 text-center">
-                          <button
-                            onClick={loadMoreData}
-                            disabled={loadingHistory}
-                            className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                          >
-                            {loadingHistory ? '加载中...' : '加载更多'}
-                          </button>
-                          <div className="text-xs text-muted-foreground mt-2">
-                            已显示 {displayedData.length} 条，共 {allHistoryData.length} 条
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  
+                  {/* 加载更多按钮 */}
+                  {hasMoreData && (
+                    <div className="mt-4 text-center">
+                      <button
+                        onClick={loadMoreData}
+                        disabled={loadingHistory}
+                        className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full"
+                      >
+                        {loadingHistory ? '加载中...' : '加载更多历史净值'}
+                      </button>
+                      <div className="text-xs text-muted-foreground mt-2">
+                        已显示 {displayedData.length} / {allHistoryData.length} 条数据
+                      </div>
                     </div>
-                  ) : (
-                    <div className="text-center py-4 text-muted text-sm">暂无历史数据</div>
                   )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-      ) : (
-        <>
-          {hasHoldings && (
-            <>
-              <div
-                style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none' }}
-                className="title"
-                onClick={() => onToggleCollapse?.(f.code)}
-              >
-                <div className="row" style={{ width: '100%', flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>前10重仓股票</span>
-                    <ChevronIcon
-                      width="16"
-                      height="16"
-                      className="muted"
-                      style={{
-                        transform: collapsedCodes?.has(f.code)
-                          ? 'rotate(-90deg)'
-                          : 'rotate(0deg)',
-                        transition: 'transform 0.2s ease',
-                      }}
-                    />
-                  </div>
-                  <span className="muted">涨跌幅 / 占比</span>
                 </div>
-              </div>
-              <AnimatePresence>
-                {!collapsedCodes?.has(f.code) && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.3, ease: 'easeInOut' }}
-                    style={{ overflow: 'hidden' }}
-                  >
-                    <div className="list">
-                      {f.holdings.map((h, idx) => (
-                        <div className="item" key={idx}>
-                          <span className="name">{h.name}</span>
-                          <div className="values">
-                            {isNumber(h.change) && (
-                              <span
-                                className={`badge ${h.change > 0 ? 'up' : h.change < 0 ? 'down' : ''}`}
-                                style={{ marginRight: 8 }}
-                              >
-                                {h.change > 0 ? '+' : ''}
-                                {h.change.toFixed(2)}%
-                              </span>
-                            )}
-                            <span className="weight">{h.weight}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </>
+              ) : (
+                <div className="text-center py-4 text-muted text-sm">暂无历史数据</div>
+              )}
+            </motion.div>
           )}
-          <FundTrendChart
-            key={`${f.code}-${theme}`}
-            code={f.code}
-            isExpanded={!collapsedTrends?.has(f.code)}
-            onToggleExpand={() => onToggleTrendCollapse?.(f.code)}
-            transactions={transactions?.[f.code] || []}
-            theme={theme}
-          />
+        </AnimatePresence>
+      </div>
+
+      {hasHoldings && (
+        <>
+          <div
+            style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none', marginTop: '16px' }}
+            className="title"
+            onClick={() => onToggleCollapse?.(f.code)}
+          >
+            <div className="row" style={{ width: '100%', flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>前10重仓股票</span>
+                <ChevronIcon
+                  width="16"
+                  height="16"
+                  className="muted"
+                  style={{
+                    transform: collapsedCodes?.has(f.code)
+                      ? 'rotate(-90deg)'
+                      : 'rotate(0deg)',
+                    transition: 'transform 0.2s ease',
+                  }}
+                />
+              </div>
+              <span className="muted">涨跌幅 / 占比</span>
+            </div>
+          </div>
+          <AnimatePresence>
+            {!collapsedCodes?.has(f.code) && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                style={{ overflow: 'hidden' }}
+              >
+                <div className="list">
+                  {f.holdings.map((h, idx) => (
+                    <div className="item" key={idx}>
+                      <span className="name">{h.name}</span>
+                      <div className="values">
+                        {isNumber(h.change) && (
+                          <span
+                            className={`badge ${h.change > 0 ? 'up' : h.change < 0 ? 'down' : ''}`}
+                            style={{ marginRight: 8 }}
+                          >
+                            {h.change > 0 ? '+' : ''}
+                            {h.change.toFixed(2)}%
+                          </span>
+                        )}
+                        <span className="weight">{h.weight}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </>
       )}
     </motion.div>
