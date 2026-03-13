@@ -1,3 +1,4 @@
+// app/components/FundCard.jsx
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -20,6 +21,8 @@ import {
   TrashIcon,
   CalendarIcon,
   RefreshIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from './Icons';
 import { fetchFundNetValueHistoryByRange } from '../api/fund';
 
@@ -87,68 +90,232 @@ export default function FundCard({
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [historyError, setHistoryError] = useState(null);
   const [historyLastUpdated, setHistoryLastUpdated] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [perPage, setPerPage] = useState(20);
 
-  // 获取历史净值数据
-  const loadHistoryData = useCallback(async (range) => {
+  // 获取历史净值数据（支持分页）
+  const loadHistoryData = useCallback(async (range, page = 1) => {
     if (!f?.code || historyLoading) return;
     
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const result = await fetchFundNetValueHistoryByRange(f.code, range);
+      const result = await fetchFundNetValueHistoryByRange(f.code, range, page, perPage);
       
       if (result && result.data) {
-        // 处理涨跌幅格式
-        const processedData = result.data.map(item => {
-          let dailyChangeFormatted = item.dailyChange || '--';
-          // 提取数字百分比
-          const match = dailyChangeFormatted.match(/([-+]?[\d.]+)%/);
-          const changeValue = match ? parseFloat(match[1]) : null;
-          
-          return {
-            ...item,
-            dailyChangeFormatted,
-            changeValue,
-            isUp: changeValue > 0,
-            isDown: changeValue < 0
-          };
-        });
-        
-        setHistoryData(processedData);
+        setHistoryData(result.data);
+        setTotalPages(result.totalPages || 1);
+        setCurrentPage(result.currentPage || 1);
+        setTotalCount(result.totalCount || 0);
         setHistoryLastUpdated(Date.now());
       } else {
         setHistoryData([]);
+        setTotalPages(1);
+        setCurrentPage(1);
+        setTotalCount(0);
       }
     } catch (error) {
       console.error('获取历史净值失败:', error);
       setHistoryError('获取历史净值失败，请稍后重试');
       setHistoryData([]);
+      setTotalPages(1);
+      setCurrentPage(1);
+      setTotalCount(0);
     } finally {
       setHistoryLoading(false);
     }
-  }, [f?.code, historyLoading]);
+  }, [f?.code, historyLoading, perPage]);
 
   // 初始加载或range变化时重新加载
   useEffect(() => {
     if (f?.code && historyExpanded) {
-      loadHistoryData(historyRange);
+      setCurrentPage(1);
+      loadHistoryData(historyRange, 1);
     }
   }, [f?.code, historyRange, historyExpanded, loadHistoryData]);
+
+  // 处理页码变化
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      loadHistoryData(historyRange, newPage);
+    }
+  };
+
+  // 处理每页显示条数变化
+  const handlePerPageChange = (newPerPage) => {
+    setPerPage(newPerPage);
+    setCurrentPage(1);
+  };
 
   // 处理时间范围变更
   const handleHistoryRangeChange = (range) => {
     setHistoryRange(range);
+    setCurrentPage(1);
   };
 
   // 刷新历史净值数据
   const handleRefreshHistory = () => {
-    loadHistoryData(historyRange);
+    loadHistoryData(historyRange, currentPage);
   };
 
   // 格式化日期显示
   const formatHistoryDate = (dateStr) => {
     const d = dayjs(dateStr);
     return d.isValid() ? d.format('MM-DD') : dateStr;
+  };
+
+  // 渲染分页控制器
+  const renderPagination = () => {
+    if (totalPages <= 1) return null;
+    
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        marginTop: '12px',
+        flexWrap: 'wrap'
+      }}>
+        {/* 每页显示条数选择 */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          fontSize: '12px',
+          color: 'var(--muted)'
+        }}>
+          <span>每页</span>
+          <select
+            value={perPage}
+            onChange={(e) => handlePerPageChange(Number(e.target.value))}
+            style={{
+              padding: '4px 8px',
+              borderRadius: '4px',
+              border: '1px solid var(--border)',
+              background: theme === 'light' ? '#fff' : 'var(--card)',
+              color: 'var(--text)',
+              fontSize: '12px',
+              cursor: 'pointer',
+              outline: 'none'
+            }}
+          >
+            <option value={10}>10条</option>
+            <option value={20}>20条</option>
+            <option value={50}>50条</option>
+            <option value={100}>100条</option>
+          </select>
+        </div>
+        
+        {/* 分页按钮 */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
+        }}>
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid var(--border)',
+              background: theme === 'light' 
+                ? (currentPage === 1 ? '#f1f5f9' : '#fff') 
+                : (currentPage === 1 ? 'rgba(255,255,255,0.1)' : 'var(--card)'),
+              color: currentPage === 1 ? 'var(--muted)' : 'var(--text)',
+              fontSize: '12px',
+              cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              opacity: currentPage === 1 ? 0.5 : 1
+            }}
+          >
+            <ChevronLeftIcon width="12" height="12" />
+            上一页
+          </button>
+          
+          {/* 页码显示 */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '2px',
+            fontSize: '12px',
+            color: 'var(--text)'
+          }}>
+            <span>第</span>
+            <input
+              type="number"
+              min="1"
+              max={totalPages}
+              value={currentPage}
+              onChange={(e) => {
+                const page = parseInt(e.target.value);
+                if (page >= 1 && page <= totalPages) {
+                  handlePageChange(page);
+                }
+              }}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  const page = parseInt(e.target.value);
+                  if (page >= 1 && page <= totalPages) {
+                    handlePageChange(page);
+                  }
+                }
+              }}
+              style={{
+                width: '40px',
+                padding: '4px',
+                borderRadius: '4px',
+                border: '1px solid var(--border)',
+                background: theme === 'light' ? '#fff' : 'var(--card)',
+                color: 'var(--text)',
+                fontSize: '12px',
+                textAlign: 'center',
+                outline: 'none'
+              }}
+            />
+            <span>页/共{totalPages}页</span>
+          </div>
+          
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid var(--border)',
+              background: theme === 'light' 
+                ? (currentPage === totalPages ? '#f1f5f9' : '#fff') 
+                : (currentPage === totalPages ? 'rgba(255,255,255,0.1)' : 'var(--card)'),
+              color: currentPage === totalPages ? 'var(--muted)' : 'var(--text)',
+              fontSize: '12px',
+              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              opacity: currentPage === totalPages ? 0.5 : 1
+            }}
+          >
+            下一页
+            <ChevronRightIcon width="12" height="12" />
+          </button>
+        </div>
+        
+        {/* 总记录数 */}
+        <div style={{
+          fontSize: '12px',
+          color: 'var(--muted)',
+          whiteSpace: 'nowrap'
+        }}>
+          共{totalCount}条记录
+        </div>
+      </div>
+    );
   };
 
   // 渲染历史净值表格
@@ -178,7 +345,7 @@ export default function FundCard({
               to { transform: rotate(360deg); }
             }
           `}</style>
-          加载历史净值中...
+          加载第{currentPage}页数据中...
         </div>
       );
     }
@@ -235,147 +402,152 @@ export default function FundCard({
     }
     
     return (
-      <div className="scrollbar-y-styled" style={{ 
-        maxHeight: '320px',
-        overflowY: 'auto',
-        borderRadius: '8px',
-        border: '1px solid var(--border)',
-        backgroundColor: theme === 'light' ? 'var(--card)' : 'rgba(11, 18, 32, 0.6)'
-      }}>
-        <table style={{ 
-          width: '100%', 
-          borderCollapse: 'collapse',
-          fontSize: '12px',
-          tableLayout: 'fixed'
+      <>
+        <div className="scrollbar-y-styled" style={{ 
+          maxHeight: '320px',
+          overflowY: 'auto',
+          borderRadius: '8px',
+          border: '1px solid var(--border)',
+          backgroundColor: theme === 'light' ? 'var(--card)' : 'rgba(11, 18, 32, 0.6)',
+          marginBottom: '12px'
         }}>
-          <thead>
-            <tr style={{ 
-              backgroundColor: theme === 'light' ? 'var(--table-pinned-header-bg)' : 'rgba(255, 255, 255, 0.05)',
-              borderBottom: '1px solid var(--border)',
-              position: 'sticky',
-              top: 0,
-              zIndex: 1
-            }}>
-              <th style={{ 
-                padding: '12px 12px', 
-                textAlign: 'left', 
-                fontWeight: 600,
-                color: 'var(--text)',
-                width: '25%',
+          <table style={{ 
+            width: '100%', 
+            borderCollapse: 'collapse',
+            fontSize: '12px',
+            tableLayout: 'fixed'
+          }}>
+            <thead>
+              <tr style={{ 
+                backgroundColor: theme === 'light' ? 'var(--table-pinned-header-bg)' : 'rgba(255, 255, 255, 0.05)',
+                borderBottom: '1px solid var(--border)',
                 position: 'sticky',
                 top: 0,
-                backgroundColor: 'inherit',
-                borderRight: '1px solid var(--border)'
+                zIndex: 1
               }}>
-                日期
-              </th>
-              <th style={{ 
-                padding: '12px 12px', 
-                textAlign: 'right', 
-                fontWeight: 600,
-                color: 'var(--text)',
-                width: '25%',
-                position: 'sticky',
-                top: 0,
-                backgroundColor: 'inherit',
-                borderRight: '1px solid var(--border)'
-              }}>
-                单位净值
-              </th>
-              <th style={{ 
-                padding: '12px 12px', 
-                textAlign: 'right', 
-                fontWeight: 600,
-                color: 'var(--text)',
-                width: '25%',
-                position: 'sticky',
-                top: 0,
-                backgroundColor: 'inherit',
-                borderRight: '1px solid var(--border)'
-              }}>
-                累计净值
-              </th>
-              <th style={{ 
-                padding: '12px 12px', 
-                textAlign: 'right', 
-                fontWeight: 600,
-                color: 'var(--text)',
-                width: '25%',
-                position: 'sticky',
-                top: 0,
-                backgroundColor: 'inherit'
-              }}>
-                日涨跌幅
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {historyData.map((item, index) => (
-              <tr 
-                key={index} 
-                style={{ 
-                  borderBottom: '1px solid var(--border)',
-                  backgroundColor: index % 2 === 0 ? 'transparent' : (theme === 'light' ? 'rgba(0, 0, 0, 0.02)' : 'rgba(255, 255, 255, 0.02)'),
-                  transition: 'background-color 0.2s ease',
-                  cursor: 'pointer'
-                }}
-                className="hover:bg-[--table-row-hover-bg]"
-                onClick={() => {
-                  // 可以添加点击行的事件，比如查看详情
-                  console.log('查看净值详情:', item);
-                }}
-              >
-                <td style={{ 
-                  padding: '12px 12px',
-                  color: 'var(--text)',
-                  fontWeight: 500,
-                  borderRight: '1px solid var(--border)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
-                }}>
-                  {formatHistoryDate(item.date)}
-                </td>
-                <td style={{ 
+                <th style={{ 
                   padding: '12px 12px', 
-                  textAlign: 'right',
+                  textAlign: 'left', 
+                  fontWeight: 600,
                   color: 'var(--text)',
-                  fontWeight: 600,
-                  borderRight: '1px solid var(--border)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
+                  width: '25%',
+                  position: 'sticky',
+                  top: 0,
+                  backgroundColor: 'inherit',
+                  borderRight: '1px solid var(--border)'
                 }}>
-                  {item.unitNetValue || '--'}
-                </td>
-                <td style={{ 
+                  日期
+                </th>
+                <th style={{ 
                   padding: '12px 12px', 
-                  textAlign: 'right',
+                  textAlign: 'right', 
+                  fontWeight: 600,
                   color: 'var(--text)',
-                  fontWeight: 600,
-                  borderRight: '1px solid var(--border)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
+                  width: '25%',
+                  position: 'sticky',
+                  top: 0,
+                  backgroundColor: 'inherit',
+                  borderRight: '1px solid var(--border)'
                 }}>
-                  {item.cumulativeNetValue || item.unitNetValue || '--'}
-                </td>
-                <td style={{ 
+                  单位净值
+                </th>
+                <th style={{ 
                   padding: '12px 12px', 
-                  textAlign: 'right',
+                  textAlign: 'right', 
                   fontWeight: 600,
-                  color: item.isUp ? 'var(--danger)' : item.isDown ? 'var(--success)' : 'var(--text)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
+                  color: 'var(--text)',
+                  width: '25%',
+                  position: 'sticky',
+                  top: 0,
+                  backgroundColor: 'inherit',
+                  borderRight: '1px solid var(--border)'
                 }}>
-                  {item.dailyChangeFormatted || '--'}
-                </td>
+                  累计净值
+                </th>
+                <th style={{ 
+                  padding: '12px 12px', 
+                  textAlign: 'right', 
+                  fontWeight: 600,
+                  color: 'var(--text)',
+                  width: '25%',
+                  position: 'sticky',
+                  top: 0,
+                  backgroundColor: 'inherit'
+                }}>
+                  日涨跌幅
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {historyData.map((item, index) => (
+                <tr 
+                  key={`${item.date}-${index}`}
+                  style={{ 
+                    borderBottom: '1px solid var(--border)',
+                    backgroundColor: index % 2 === 0 ? 'transparent' : (theme === 'light' ? 'rgba(0, 0, 0, 0.02)' : 'rgba(255, 255, 255, 0.02)'),
+                    transition: 'background-color 0.2s ease',
+                    cursor: 'pointer'
+                  }}
+                  className="hover:bg-[--table-row-hover-bg]"
+                  onClick={() => {
+                    console.log('查看净值详情:', item);
+                  }}
+                >
+                  <td style={{ 
+                    padding: '12px 12px',
+                    color: 'var(--text)',
+                    fontWeight: 500,
+                    borderRight: '1px solid var(--border)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {formatHistoryDate(item.date)}
+                  </td>
+                  <td style={{ 
+                    padding: '12px 12px', 
+                    textAlign: 'right',
+                    color: 'var(--text)',
+                    fontWeight: 600,
+                    borderRight: '1px solid var(--border)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {item.unitNetValue || '--'}
+                  </td>
+                  <td style={{ 
+                    padding: '12px 12px', 
+                    textAlign: 'right',
+                    color: 'var(--text)',
+                    fontWeight: 600,
+                    borderRight: '1px solid var(--border)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {item.cumulativeNetValue || item.unitNetValue || '--'}
+                  </td>
+                  <td style={{ 
+                    padding: '12px 12px', 
+                    textAlign: 'right',
+                    fontWeight: 600,
+                    color: item.isUp ? 'var(--danger)' : item.isDown ? 'var(--success)' : 'var(--text)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {item.dailyChange || '--'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        
+        {/* 分页控制器 */}
+        {renderPagination()}
+      </>
     );
   };
 
@@ -789,7 +961,7 @@ export default function FundCard({
         </>
       )}
 
-      {/* 新增：历史净值部分 */}
+      {/* 历史净值部分 */}
       <div style={{ marginTop: '20px' }}>
         <div
           style={{ 
@@ -921,7 +1093,7 @@ export default function FundCard({
                 borderRadius: '6px',
                 backgroundColor: theme === 'light' ? 'rgba(0, 0, 0, 0.03)' : 'rgba(255, 255, 255, 0.03)'
               }}>
-                数据来源：东方财富网 | 共{historyData.length}条记录
+                数据来源：东方财富网 | 第{currentPage}页/共{totalPages}页
               </div>
             </motion.div>
           )}
