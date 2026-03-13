@@ -1,60 +1,5 @@
-// app/components/Icons.jsx
 'use client';
 
-// CalendarIcon - 只保留一个定义
-export const CalendarIcon = ({ width = 16, height = 16, ...props }) => (
-  <svg
-    width={width}
-    height={height}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...props}
-  >
-    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-    <line x1="16" y1="2" x2="16" y2="6"></line>
-    <line x1="8" y1="2" x2="8" y2="6"></line>
-    <line x1="3" y1="10" x2="21" y2="10"></line>
-  </svg>
-);
-
-// 分页图标
-export const ChevronLeftIcon = ({ width = 16, height = 16, ...props }) => (
-  <svg
-    width={width}
-    height={height}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...props}
-  >
-    <polyline points="15 18 9 12 15 6"></polyline>
-  </svg>
-);
-
-export const ChevronRightIcon = ({ width = 16, height = 16, ...props }) => (
-  <svg
-    width={width}
-    height={height}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...props}
-  >
-    <polyline points="9 18 15 12 9 6"></polyline>
-  </svg>
-);
-
-// 保持其他图标不变
 export function PlusIcon(props) {
   return (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
@@ -134,8 +79,7 @@ export function RefreshIcon(props) {
 
 export function ResetIcon(props) {
   return (
-    <svg t="1772152323013" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="4796" width="16" height="16">
-      <path fill="currentColor" d="M864 512a352 352 0 0 0-600.96-248.96c-15.744 15.872-40.704 42.88-63.232 67.648H320a32 32 0 1 1 0 64H128a31.872 31.872 0 0 1-32-32v-192a32 32 0 1 1 64 0v108.672c20.544-22.528 42.688-46.4 57.856-61.504a416 416 0 1 1 0 588.288 32 32 0 1 1 45.248-45.248A352 352 0 0 0 864 512z" p-id="4797"></path>
+    <svg t="1772152323013" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="4796" width="16" height="16"><path fill="currentColor" d="M864 512a352 352 0 0 0-600.96-248.96c-15.744 15.872-40.704 42.88-63.232 67.648H320a32 32 0 1 1 0 64H128a31.872 31.872 0 0 1-32-32v-192a32 32 0 1 1 64 0v108.672c20.544-22.528 42.688-46.4 57.856-61.504a416 416 0 1 1 0 588.288 32 32 0 1 1 45.248-45.248A352 352 0 0 0 864 512z" p-id="4797"></path>
     </svg>
   );
 }
@@ -272,6 +216,17 @@ export function StarIcon({ filled, ...props }) {
   );
 }
 
+export function CalendarIcon(props) {
+  return (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+      <line x1="16" y1="2" x2="16" y2="6"></line>
+      <line x1="8" y1="2" x2="8" y2="6"></line>
+      <line x1="3" y1="10" x2="21" y2="10"></line>
+    </svg>
+  );
+}
+
 export function MinusIcon(props) {
   return (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
@@ -306,7 +261,7 @@ export function MoonIcon(props) {
   );
 }
 
-export function SwitchIcon(props) {
+export function SwitchIcon({ props }) {
   return (
     <svg t="1772945896369" className="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"
          p-id="2524" width="13" height="13">
@@ -320,5 +275,5 @@ export function SwitchIcon(props) {
         d="M292.784 770.597c-8.189 0-16.379-3.124-22.627-9.373L109.373 600.439c-12.497-12.496-12.497-32.758 0-45.254 12.497-12.498 32.758-12.498 45.255 0L315.412 715.97c12.497 12.496 12.497 32.758 0 45.254-6.249 6.249-14.438 9.373-22.628 9.373z"
         fill="currentColor" p-id="2527"></path>
     </svg>
-  );
+  )
 }
