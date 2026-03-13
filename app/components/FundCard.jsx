@@ -19,7 +19,7 @@ import {
   TrashIcon,
 } from './Icons';
 import { fetchFundHistory } from '@/app/api/fund'; // 导入历史净值函数
-import { useState, useEffect, useCallback, useRef } from 'react'; // 导入React Hooks
+import { useState, useEffect, useCallback } from 'react'; // 导入React Hooks
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -35,213 +35,6 @@ const getBrowserTimeZone = () => {
 };
 const TZ = getBrowserTimeZone();
 const toTz = (input) => (input ? dayjs.tz(input, TZ) : dayjs().tz(TZ));
-
-// 历史净值弹窗组件
-function HistoryModal({ isOpen, onClose, fundCode, theme }) {
-  const [historyRange, setHistoryRange] = useState('1m');
-  const [allHistoryData, setAllHistoryData] = useState([]);
-  const [displayedData, setDisplayedData] = useState([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const modalContentRef = useRef(null);
-  
-  const PAGE_SIZE = 20; // 弹窗内每页显示20条数据
-  
-  // 时间范围配置
-  const timeRangeConfig = [
-    { key: '1m', label: '1个月' },
-    { key: '3m', label: '3个月' },
-    { key: '6m', label: '6个月' },
-    { key: '1y', label: '1年' },
-    { key: '3y', label: '3年' },
-    { key: 'all', label: '全部' }
-  ];
-
-  // 计算日涨幅
-  const calculateDailyChange = (current, previous) => {
-    if (!previous || previous.value === 0 || current.value === previous.value) {
-      return { value: null, formatted: '--' };
-    }
-    
-    const change = ((current.value - previous.value) / previous.value) * 100;
-    const formatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
-    return { value: change, formatted };
-  };
-
-  // 获取历史净值数据
-  const loadHistoryData = useCallback(async (code, range, page = 1) => {
-    if (!code || loadingHistory) return;
-    
-    if (page === 1) {
-      setLoadingHistory(true);
-    } else {
-      setLoadingMore(true);
-    }
-    
-    try {
-      const data = await fetchFundHistory(code, range);
-      
-      // 对数据进行倒序排列，确保最新日期在前面
-      const sortedData = [...(data || [])].sort((a, b) => {
-        return new Date(b.date) - new Date(a.date);
-      });
-
-      // 计算日涨幅
-      const dataWithChange = sortedData.map((item, index) => {
-        const prevItem = sortedData[index + 1]; // 因为倒序排列，所以下一条是前一天的
-        const change = calculateDailyChange(item, prevItem);
-        return {
-          ...item,
-          change: change.value,
-          changeFormatted: change.formatted
-        };
-      });
-
-      setAllHistoryData(dataWithChange);
-      
-      // 弹窗内显示所有数据，通过滚动加载
-      setDisplayedData(dataWithChange);
-      setCurrentPage(1);
-    } catch (error) {
-      console.error('获取历史净值失败:', error);
-      setAllHistoryData([]);
-      setDisplayedData([]);
-    } finally {
-      setLoadingHistory(false);
-      setLoadingMore(false);
-    }
-  }, [loadingHistory]);
-
-  // 当时间范围变化时重新加载数据
-  useEffect(() => {
-    if (isOpen && fundCode) {
-      loadHistoryData(fundCode, historyRange);
-    }
-  }, [isOpen, fundCode, historyRange, loadHistoryData]);
-
-  // 处理滚动加载
-  const handleScroll = useCallback(() => {
-    if (!modalContentRef.current || loadingMore || loadingHistory) return;
-    
-    const { scrollTop, scrollHeight, clientHeight } = modalContentRef.current;
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
-    
-    if (isNearBottom && displayedData.length < allHistoryData.length) {
-      const nextPage = currentPage + 1;
-      const startIndex = 0;
-      const endIndex = nextPage * PAGE_SIZE;
-      const newData = allHistoryData.slice(startIndex, Math.min(endIndex, allHistoryData.length));
-      
-      setDisplayedData(newData);
-      setCurrentPage(nextPage);
-    }
-  }, [loadingMore, loadingHistory, displayedData.length, allHistoryData.length, currentPage, PAGE_SIZE]);
-
-  // 添加滚动事件监听
-  useEffect(() => {
-    const contentElement = modalContentRef.current;
-    if (contentElement) {
-      contentElement.addEventListener('scroll', handleScroll);
-      return () => contentElement.removeEventListener('scroll', handleScroll);
-    }
-  }, [handleScroll]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-card border border-border rounded-lg shadow-lg w-full max-w-4xl max-h-[80vh] overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <h3 className="text-lg font-medium">历史净值详情</h3>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-secondary rounded transition-colors"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        
-        <div className="p-4 border-b border-border">
-          <div className="flex gap-2 flex-wrap">
-            {timeRangeConfig.map(({ key, label }) => (
-              <button
-                key={key}
-                className={`px-3 py-1.5 text-sm rounded whitespace-nowrap transition-colors ${
-                  historyRange === key
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                }`}
-                onClick={() => setHistoryRange(key)}
-                disabled={loadingHistory}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        
-        <div 
-          ref={modalContentRef}
-          className="overflow-y-auto max-h-[calc(80vh-140px)]"
-        >
-          {loadingHistory ? (
-            <div className="text-center py-8 text-muted">加载中...</div>
-          ) : displayedData.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-card z-10">
-                  <tr className="border-b border-border">
-                    <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">日期</th>
-                    <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">单位净值</th>
-                    <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">日涨幅</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayedData.map((item, idx) => {
-                    const getChangeColor = () => {
-                      if (!item.changeFormatted || item.changeFormatted === '--') {
-                        return 'text-muted-foreground';
-                      }
-                      return item.changeFormatted.startsWith('+') 
-                        ? 'text-red-400 dark:text-red-300'
-                        : 'text-green-400 dark:text-green-300';
-                    };
-
-                    return (
-                      <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
-                        <td className="p-3 whitespace-nowrap">{item.date}</td>
-                        <td className="p-3 whitespace-nowrap font-medium">{item.value.toFixed(4)}</td>
-                        <td className={`p-3 whitespace-nowrap font-medium ${getChangeColor()}`}>
-                          {item.changeFormatted}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              
-              {loadingMore && (
-                <div className="text-center py-4 text-muted text-sm">加载更多...</div>
-              )}
-              
-              {displayedData.length < allHistoryData.length && (
-                <div className="text-center py-4 text-xs text-muted-foreground">
-                  已加载 {displayedData.length} 条，共 {allHistoryData.length} 条数据
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted">暂无历史数据</div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function FundCard({
   fund: f,
@@ -275,46 +68,94 @@ export default function FundCard({
   const hasHoldings = f.holdingsIsLastQuarter && Array.isArray(f.holdings) && f.holdings.length > 0;
 
   // 新增状态：历史净值相关
-  const [showHistoryModal, setShowHistoryModal] = useState(false); // 控制历史净值弹窗显示
-  const [previewHistoryData, setPreviewHistoryData] = useState([]); // 预览用历史数据
+  const [showHistory, setShowHistory] = useState(false); // 控制历史净值显示
+  const [historyRange, setHistoryRange] = useState('1m');
+  const [allHistoryData, setAllHistoryData] = useState([]); // 存储所有历史数据
+  const [displayedData, setDisplayedData] = useState([]); // 当前显示的数据
+  const [currentPage, setCurrentPage] = useState(1);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [hasMoreData, setHasMoreData] = useState(false);
 
-  // 获取预览历史数据
+  const PAGE_SIZE = 5; // 每页显示5条数据
+
+  // 时间范围配置
+  const timeRangeConfig = [
+    { key: '1m', label: '1个月' },
+    { key: '3m', label: '3个月' },
+    { key: '6m', label: '6个月' },
+    { key: '1y', label: '1年' },
+    { key: '3y', label: '3年' },
+    { key: 'all', label: '全部' }
+  ];
+
+  // 计算日涨幅
+  const calculateDailyChange = (current, previous) => {
+    if (!previous || previous.value === 0 || current.value === previous.value) {
+      return { value: null, formatted: '--' };
+    }
+    
+    const change = ((current.value - previous.value) / previous.value) * 100;
+    const formatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+    return { value: change, formatted };
+  };
+
+  // 获取历史净值数据的函数
+  const loadHistoryData = useCallback(async (code, range) => {
+    if (!code || loadingHistory) return;
+    setLoadingHistory(true);
+    try {
+      const data = await fetchFundHistory(code, range);
+      
+      // 对数据进行倒序排列，确保最新日期在前面
+      const sortedData = [...(data || [])].sort((a, b) => {
+        return new Date(b.date) - new Date(a.date);
+      });
+
+      // 计算日涨幅
+      const dataWithChange = sortedData.map((item, index) => {
+        const prevItem = sortedData[index + 1]; // 因为倒序排列，所以下一条是前一天的
+        const change = calculateDailyChange(item, prevItem);
+        return {
+          ...item,
+          change: change.value,
+          changeFormatted: change.formatted
+        };
+      });
+
+      setAllHistoryData(dataWithChange);
+      
+      // 初始化显示第一页数据（5条）
+      setCurrentPage(1);
+      setDisplayedData(dataWithChange.slice(0, PAGE_SIZE));
+      setHasMoreData(dataWithChange.length > PAGE_SIZE);
+    } catch (error) {
+      console.error('获取历史净值失败:', error);
+      setAllHistoryData([]);
+      setDisplayedData([]);
+      setHasMoreData(false);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [loadingHistory, PAGE_SIZE]);
+
+  // 加载更多数据
+  const loadMoreData = () => {
+    const nextPage = currentPage + 1;
+    const startIndex = 0;
+    const endIndex = nextPage * PAGE_SIZE;
+    const newData = allHistoryData.slice(startIndex, endIndex);
+    
+    setDisplayedData(newData);
+    setCurrentPage(nextPage);
+    setHasMoreData(allHistoryData.length > newData.length);
+  };
+
+  // 当基金代码或时间范围变化时，重新获取数据
   useEffect(() => {
     if (f?.code) {
-      const loadPreviewData = async () => {
-        try {
-          const data = await fetchFundHistory(f.code, '1m');
-          if (data && data.length > 0) {
-            // 对数据进行倒序排列，取最新5条
-            const sortedData = [...data].sort((a, b) => {
-              return new Date(b.date) - new Date(a.date);
-            }).slice(0, 5);
-            
-            // 计算日涨幅
-            const dataWithChange = sortedData.map((item, index) => {
-              const prevItem = sortedData[index + 1];
-              let changeFormatted = '--';
-              if (prevItem && prevItem.value !== 0 && item.value !== prevItem.value) {
-                const change = ((item.value - prevItem.value) / prevItem.value) * 100;
-                changeFormatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
-              }
-              return {
-                ...item,
-                changeFormatted
-              };
-            });
-            
-            setPreviewHistoryData(dataWithChange);
-          }
-        } catch (error) {
-          console.error('获取预览历史数据失败:', error);
-          setPreviewHistoryData([]);
-        }
-      };
-      
-      loadPreviewData();
+      loadHistoryData(f.code, historyRange);
     }
-  }, [f?.code]);
+  }, [f?.code, historyRange, loadHistoryData]);
 
   const style = layoutMode === 'drawer' ? {
     border: 'none',
@@ -608,7 +449,7 @@ export default function FundCard({
         );
       })()}
 
-      {/* 1. 前10重仓股票 - 调整到第一位 */}
+      {/* 1. 前10重仓股票 - 第一位 */}
       {hasHoldings && (
         <>
           <div
@@ -668,7 +509,7 @@ export default function FundCard({
         </>
       )}
 
-      {/* 2. 业绩走势 - 调整到第二位 */}
+      {/* 2. 业绩走势 - 第二位 */}
       <div style={{ marginTop: '16px', marginBottom: '16px' }}>
         <FundTrendChart
           key={`${f.code}-${theme}`}
@@ -680,89 +521,120 @@ export default function FundCard({
         />
       </div>
 
-      {/* 3. 历史净值 - 调整到第三位，改为弹窗形式 */}
+      {/* 3. 历史净值 - 第三位，恢复折叠/展开和加载更多按钮 */}
       <div
         style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none' }}
         className="title"
-        onClick={() => setShowHistoryModal(true)}
+        onClick={() => setShowHistory(!showHistory)}
       >
         <div className="row" style={{ width: '100%', flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span>历史净值</span>
-            <svg 
-              width="16" 
-              height="16" 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="currentColor" 
-              strokeWidth="2" 
-              strokeLinecap="round" 
-              strokeLinejoin="round"
+            <ChevronIcon
+              width="16"
+              height="16"
               className="muted"
-            >
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-              <line x1="9" y1="3" x2="9" y2="21"></line>
-            </svg>
+              style={{
+                transform: showHistory
+                  ? 'rotate(0deg)'
+                  : 'rotate(-90deg)',
+                transition: 'transform 0.2s ease',
+              }}
+            />
           </div>
-          <span className="muted">点击查看详情</span>
+          <span className="muted"></span>
         </div>
       </div>
-      
-      {/* 历史净值预览 */}
-      {previewHistoryData.length > 0 && (
-        <div className="mb-4">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs sm:text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日期</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">单位净值</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日涨幅</th>
-                </tr>
-              </thead>
-              <tbody>
-                {previewHistoryData.map((item, idx) => {
-                  const getChangeColor = () => {
-                    if (!item.changeFormatted || item.changeFormatted === '--') {
-                      return 'text-muted-foreground';
-                    }
-                    return item.changeFormatted.startsWith('+') 
-                      ? 'text-red-400 dark:text-red-300'
-                      : 'text-green-400 dark:text-green-300';
-                  };
+      
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div className="space-y-3">
+              {/* 时间范围选择器 */}
+              <div className="flex gap-1 sm:gap-2 flex-wrap overflow-x-auto py-1">
+                {timeRangeConfig.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded whitespace-nowrap flex-shrink-0 transition-colors ${
+                      historyRange === key
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                    }`}
+                    onClick={() => setHistoryRange(key)}
+                    disabled={loadingHistory}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
 
-                  return (
-                    <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
-                      <td className="p-2 whitespace-nowrap">{item.date}</td>
-                      <td className="p-2 whitespace-nowrap font-medium">{item.value.toFixed(4)}</td>
-                      <td className={`p-2 whitespace-nowrap font-medium ${getChangeColor()}`}>
-                        {item.changeFormatted}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          
-          <div className="mt-2 text-center">
-            <button
-              onClick={() => setShowHistoryModal(true)}
-              className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md transition-colors w-full"
-            >
-              查看完整历史净值
-            </button>
-          </div>
-        </div>
-      )}
+              {/* 数据展示表格 */}
+              {loadingHistory ? (
+                <div className="text-center py-4 text-muted text-sm">加载中...</div>
+              ) : displayedData.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs sm:text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日期</th>
+                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">单位净值</th>
+                        <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">日涨幅</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedData.map((item, idx) => {
+                        // 获取颜色类名 - 调整为适合深色背景的颜色
+                        const getChangeColor = () => {
+                          if (!item.changeFormatted || item.changeFormatted === '--') {
+                            return 'text-muted-foreground';
+                          }
+                          return item.changeFormatted.startsWith('+') 
+                            ? 'text-red-400 dark:text-red-300'  // 亮红色
+                            : 'text-green-400 dark:text-green-300';  // 亮绿色
+                        };
 
-      {/* 历史净值弹窗 */}
-      <HistoryModal
-        isOpen={showHistoryModal}
-        onClose={() => setShowHistoryModal(false)}
-        fundCode={f?.code}
-        theme={theme}
-      />
+                        return (
+                          <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
+                            <td className="p-2 whitespace-nowrap">{item.date}</td>
+                            <td className="p-2 whitespace-nowrap font-medium">{item.value.toFixed(4)}</td>
+                            <td className={`p-2 whitespace-nowrap font-medium ${getChangeColor()}`}>
+                              {item.changeFormatted}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  
+                  {/* 加载更多按钮 - 恢复原来的加载更多按钮 */}
+                  {hasMoreData && (
+                    <div className="mt-4 text-center">
+                      <button
+                        onClick={loadMoreData}
+                        disabled={loadingHistory}
+                        className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full"
+                      >
+                        {loadingHistory ? '加载中...' : '加载更多历史净值'}
+                      </button>
+                      <div className="text-xs text-muted-foreground mt-2">
+                        已显示 {displayedData.length} 条，共 {allHistoryData.length} 条数据
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-muted text-sm">暂无历史数据</div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
