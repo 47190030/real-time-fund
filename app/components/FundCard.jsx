@@ -6,7 +6,6 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import { isNumber, isString } from 'lodash';
-import { useState, useCallback } from 'react'; // 新增必要的 React Hook
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Stat } from './Common';
 import FundTrendChart from './FundTrendChart';
@@ -18,8 +17,11 @@ import {
   StarIcon,
   SwitchIcon,
   TrashIcon,
+  TableIcon,
+  CardIcon,
+  DownloadIcon,
 } from './Icons';
-import { fetchFundHistory } from '@/app/api/fund.js'; // 导入历史净值API
+import { useState, useMemo, useEffect, useCallback } from 'react';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -36,6 +38,489 @@ const getBrowserTimeZone = () => {
 const TZ = getBrowserTimeZone();
 const toTz = (input) => (input ? dayjs.tz(input, TZ) : dayjs().tz(TZ));
 
+// 历史净值组件
+const HistoryNetValue = ({ 
+  fundCode, 
+  theme, 
+  historyCollapsed, 
+  onToggleHistoryCollapse,
+  fetchFundHistory
+}) => {
+  const [historyData, setHistoryData] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [historyViewMode, setHistoryViewMode] = useState('table');
+  const [loading, setLoading] = useState(false);
+  const [timeRange, setTimeRange] = useState('1y');
+  
+  // 加载历史数据
+  const loadHistoryData = useCallback(async () => {
+    if (!fundCode || loading || historyData.length > 0) return;
+    
+    setLoading(true);
+    try {
+      const data = await fetchFundHistory(fundCode, timeRange);
+      setHistoryData(data);
+    } catch (error) {
+      console.error('加载历史净值失败:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [fundCode, timeRange, historyData.length, loading]);
+
+  // 展开时加载数据
+  useEffect(() => {
+    if (!historyCollapsed && historyData.length === 0) {
+      loadHistoryData();
+    }
+  }, [historyCollapsed, historyData.length, loadHistoryData]);
+
+  // 分页数据
+  const paginatedData = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return historyData.slice(startIndex, endIndex);
+  }, [historyData, currentPage, pageSize]);
+
+  // 总页数
+  const totalPages = Math.ceil(historyData.length / pageSize);
+
+  // 导出数据
+  const handleExport = () => {
+    const csvContent = [
+      '日期,单位净值,累计净值,日涨跌幅',
+      ...historyData.map(item => `${item.date},${item.value},${item.accumulatedValue || '-'},${item.dailyChange || '-'}`)
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `历史净值_${fundCode}_${dayjs().format('YYYYMMDD')}.csv`);
+    link.click();
+  };
+
+  // 时间范围选项
+  const timeRanges = [
+    { value: '1m', label: '近1月' },
+    { value: '3m', label: '近3月' },
+    { value: '6m', label: '近6月' },
+    { value: '1y', label: '近1年' },
+    { value: '3y', label: '近3年' },
+    { value: 'all', label: '全部' },
+  ];
+
+  return (
+    <>
+      {/* 历史净值标题栏 */}
+      <div
+        style={{ 
+          marginBottom: 8, 
+          cursor: 'pointer', 
+          userSelect: 'none',
+          paddingTop: 12,
+          borderTop: theme === 'light' ? '1px solid #eee' : '1px solid #333'
+        }}
+        className="title"
+        onClick={() => onToggleHistoryCollapse?.(fundCode)}
+      >
+        <div className="row" style={{ width: '100%', flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>历史净值</span>
+            <ChevronIcon
+              width="16"
+              height="16"
+              className="muted"
+              style={{
+                transform: historyCollapsed
+                  ? 'rotate(-90deg)'
+                  : 'rotate(0deg)',
+                transition: 'transform 0.2s ease',
+              }}
+            />
+          </div>
+          <span className="muted">单位净值 / 累计净值 / 日涨跌幅</span>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {!historyCollapsed && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            style={{ overflow: 'hidden' }}
+          >
+            {/* 工具栏 */}
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              marginBottom: 12,
+              padding: '8px 0'
+            }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {/* 时间范围选择 */}
+                <select
+                  value={timeRange}
+                  onChange={(e) => {
+                    setTimeRange(e.target.value);
+                    setCurrentPage(1);
+                    setHistoryData([]);
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 4,
+                    border: `1px solid ${theme === 'light' ? '#ddd' : '#444'}`,
+                    background: theme === 'light' ? '#fff' : '#333',
+                    color: theme === 'light' ? '#333' : '#fff',
+                    fontSize: '12px'
+                  }}
+                >
+                  {timeRanges.map(range => (
+                    <option key={range.value} value={range.value}>
+                      {range.label}
+                    </option>
+                  ))}
+                </select>
+
+                {/* 视图切换 */}
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button
+                    className={`icon-button ${historyViewMode === 'table' ? 'active' : ''}`}
+                    onClick={() => setHistoryViewMode('table')}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '12px',
+                      background: historyViewMode === 'table' 
+                        ? (theme === 'light' ? '#e8f4ff' : '#1e3a5f')
+                        : 'transparent',
+                      border: `1px solid ${theme === 'light' ? '#ddd' : '#444'}`
+                    }}
+                  >
+                    <TableIcon width="12" height="12" style={{ marginRight: 4 }} />
+                    表格
+                  </button>
+                  <button
+                    className={`icon-button ${historyViewMode === 'card' ? 'active' : ''}`}
+                    onClick={() => setHistoryViewMode('card')}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '12px',
+                      background: historyViewMode === 'card' 
+                        ? (theme === 'light' ? '#e8f4ff' : '#1e3a5f')
+                        : 'transparent',
+                      border: `1px solid ${theme === 'light' ? '#ddd' : '#444'}`
+                    }}
+                  >
+                    <CardIcon width="12" height="12" style={{ marginRight: 4 }} />
+                    卡片
+                  </button>
+                </div>
+              </div>
+
+              {/* 导出按钮 */}
+              <button
+                onClick={handleExport}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  background: 'transparent',
+                  border: `1px solid ${theme === 'light' ? '#ddd' : '#444'}`,
+                  borderRadius: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}
+              >
+                <DownloadIcon width="12" height="12" />
+                导出
+              </button>
+            </div>
+
+            {/* 加载状态 */}
+            {loading ? (
+              <div style={{ 
+                textAlign: 'center', 
+                padding: '20px',
+                color: theme === 'light' ? '#666' : '#999'
+              }}>
+                加载历史数据中...
+              </div>
+            ) : historyData.length === 0 ? (
+              <div style={{ 
+                textAlign: 'center', 
+                padding: '20px',
+                color: theme === 'light' ? '#666' : '#999'
+              }}>
+                暂无历史净值数据
+              </div>
+            ) : (
+              <>
+                {/* 表格视图 */}
+                {historyViewMode === 'table' && (
+                  <div style={{ 
+                    overflowX: 'auto',
+                    marginBottom: 12
+                  }}>
+                    <table style={{
+                      width: '100%',
+                      borderCollapse: 'collapse',
+                      fontSize: '12px'
+                    }}>
+                      <thead>
+                        <tr style={{
+                          background: theme === 'light' ? '#f5f5f5' : '#222',
+                          borderBottom: `1px solid ${theme === 'light' ? '#eee' : '#333'}`
+                        }}>
+                          <th style={{ 
+                            padding: '8px 12px', 
+                            textAlign: 'left', 
+                            fontWeight: 500,
+                            whiteSpace: 'nowrap'
+                          }}>日期</th>
+                          <th style={{ 
+                            padding: '8px 12px', 
+                            textAlign: 'left', 
+                            fontWeight: 500,
+                            whiteSpace: 'nowrap'
+                          }}>单位净值</th>
+                          <th style={{ 
+                            padding: '8px 12px', 
+                            textAlign: 'left', 
+                            fontWeight: 500,
+                            whiteSpace: 'nowrap'
+                          }}>累计净值</th>
+                          <th style={{ 
+                            padding: '8px 12px', 
+                            textAlign: 'left', 
+                            fontWeight: 500,
+                            whiteSpace: 'nowrap'
+                          }}>日涨跌幅</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedData.map((item, index) => (
+                          <tr 
+                            key={index}
+                            style={{
+                              borderBottom: `1px solid ${theme === 'light' ? '#f0f0f0' : '#2a2a2a'}`,
+                              ':hover': {
+                                background: theme === 'light' ? '#fafafa' : '#2a2a2a'
+                              }
+                            }}
+                          >
+                            <td style={{ 
+                              padding: '8px 12px',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {item.date}
+                            </td>
+                            <td style={{ 
+                              padding: '8px 12px',
+                              fontWeight: 500
+                            }}>
+                              {item.value.toFixed(4)}
+                            </td>
+                            <td style={{ 
+                              padding: '8px 12px',
+                              color: theme === 'light' ? '#666' : '#999'
+                            }}>
+                              {item.accumulatedValue?.toFixed(4) || '-'}
+                            </td>
+                            <td style={{ 
+                              padding: '8px 12px',
+                              color: item.dailyChange > 0 ? '#f56c6c' : 
+                                     item.dailyChange < 0 ? '#67c23a' : 
+                                     theme === 'light' ? '#666' : '#999',
+                              fontWeight: item.dailyChange ? 500 : 400
+                            }}>
+                              {item.dailyChange ? (
+                                <>
+                                  {item.dailyChange > 0 ? '+' : ''}
+                                  {item.dailyChange.toFixed(2)}%
+                                </>
+                              ) : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* 卡片视图 */}
+                {historyViewMode === 'card' && (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                    gap: 8,
+                    marginBottom: 12
+                  }}>
+                    {paginatedData.map((item, index) => (
+                      <div
+                        key={index}
+                        style={{
+                          padding: 12,
+                          border: `1px solid ${theme === 'light' ? '#eee' : '#333'}`,
+                          borderRadius: 6,
+                          background: theme === 'light' ? '#fafafa' : '#1a1a1a'
+                        }}
+                      >
+                        <div style={{ 
+                          fontSize: '12px', 
+                          color: theme === 'light' ? '#666' : '#999',
+                          marginBottom: 8
+                        }}>
+                          {item.date}
+                        </div>
+                        <div style={{ marginBottom: 4 }}>
+                          <div style={{ 
+                            fontSize: '10px', 
+                            color: theme === 'light' ? '#666' : '#999' 
+                          }}>
+                            单位净值
+                          </div>
+                          <div style={{ 
+                            fontSize: '14px', 
+                            fontWeight: 500 
+                          }}>
+                            {item.value.toFixed(4)}
+                          </div>
+                        </div>
+                        <div style={{ marginBottom: 4 }}>
+                          <div style={{ 
+                            fontSize: '10px', 
+                            color: theme === 'light' ? '#666' : '#999' 
+                          }}>
+                            累计净值
+                          </div>
+                          <div style={{ 
+                            fontSize: '14px', 
+                            fontWeight: 500 
+                          }}>
+                            {item.accumulatedValue?.toFixed(4) || '-'}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ 
+                            fontSize: '10px', 
+                            color: theme === 'light' ? '#666' : '#999' 
+                          }}>
+                            日涨跌幅
+                          </div>
+                          <div style={{ 
+                            fontSize: '14px',
+                            color: item.dailyChange > 0 ? '#f56c6c' : 
+                                   item.dailyChange < 0 ? '#67c23a' : 
+                                   theme === 'light' ? '#666' : '#999',
+                            fontWeight: 500
+                          }}>
+                            {item.dailyChange ? (
+                              <>
+                                {item.dailyChange > 0 ? '+' : ''}
+                                {item.dailyChange.toFixed(2)}%
+                              </>
+                            ) : '-'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 分页器 */}
+                {historyData.length > pageSize && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 0',
+                    borderTop: `1px solid ${theme === 'light' ? '#eee' : '#333'}`
+                  }}>
+                    <div style={{ 
+                      fontSize: '12px',
+                      color: theme === 'light' ? '#666' : '#999'
+                    }}>
+                      共 {historyData.length} 条记录
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {/* 每页条数选择 */}
+                      <select
+                        value={pageSize}
+                        onChange={(e) => {
+                          setPageSize(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: '12px',
+                          border: `1px solid ${theme === 'light' ? '#ddd' : '#444'}`,
+                          background: theme === 'light' ? '#fff' : '#333',
+                          color: theme === 'light' ? '#333' : '#fff',
+                          borderRadius: 4
+                        }}
+                      >
+                        <option value={10}>10条/页</option>
+                        <option value={20}>20条/页</option>
+                        <option value={50}>50条/页</option>
+                        <option value={100}>100条/页</option>
+                      </select>
+
+                      {/* 页码导航 */}
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                          disabled={currentPage === 1}
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '12px',
+                            border: `1px solid ${theme === 'light' ? '#ddd' : '#444'}`,
+                            background: 'transparent',
+                            borderRadius: 4,
+                            cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                            opacity: currentPage === 1 ? 0.5 : 1
+                          }}
+                        >
+                          上一页
+                        </button>
+                        <div style={{ 
+                          padding: '4px 12px',
+                          fontSize: '12px',
+                          color: theme === 'light' ? '#333' : '#fff'
+                        }}>
+                          第 {currentPage} 页
+                        </div>
+                        <button
+                          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                          disabled={currentPage === totalPages}
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '12px',
+                            border: `1px solid ${theme === 'light' ? '#ddd' : '#444'}`,
+                            background: 'transparent',
+                            borderRadius: 4,
+                            cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                            opacity: currentPage === totalPages ? 0.5 : 1
+                          }}
+                        >
+                          下一页
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+};
+
+// 主组件
 export default function FundCard({
   fund: f,
   todayStr,
@@ -47,6 +532,7 @@ export default function FundCard({
   valuationSeries,
   collapsedCodes,
   collapsedTrends,
+  collapsedHistories,
   transactions,
   theme,
   isTradingDay,
@@ -60,43 +546,14 @@ export default function FundCard({
   onPercentModeToggle,
   onToggleCollapse,
   onToggleTrendCollapse,
-  layoutMode = 'card', // 'card' | 'drawer'，drawer 时前10重仓与业绩走势以 Tabs 展示
+  onToggleHistoryCollapse,
+  layoutMode = 'card',
   masked = false,
+  fetchFundHistory, // 新增：获取历史净值的函数
 }) {
   const holding = holdings[f?.code];
   const profit = getHoldingProfit?.(f, holding) ?? null;
   const hasHoldings = f.holdingsIsLastQuarter && Array.isArray(f.holdings) && f.holdings.length > 0;
-
-  // --- 新增：历史净值相关的状态和逻辑 ---
-  const [historyData, setHistoryData] = useState([]);
-  const [currentHistoryPage, setCurrentHistoryPage] = useState(1);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [showHistorySection, setShowHistorySection] = useState(false);
-  const ITEMS_PER_PAGE = 20; // 每页显示条数
-
-  // 加载历史数据的函数
-  const loadHistoryData = useCallback(async () => {
-    if (isLoadingHistory || historyData.length > 0) return; // 防止重复加载
-    setIsLoadingHistory(true);
-    try {
-      // 调用 fund.js 中已有的API，获取1年历史数据。参数 '1y' 可改为 '3y', 'all' 等
-      const data = await fetchFundHistory(f.code, '1y');
-      setHistoryData(data || []);
-      setCurrentHistoryPage(1); // 加载新数据后重置到第一页
-    } catch (error) {
-      console.error('加载历史净值失败:', error);
-      setHistoryData([]);
-    } finally {
-      setIsLoadingHistory(false);
-    }
-  }, [f.code, isLoadingHistory, historyData.length]);
-
-  // 分页计算
-  const indexOfLastItem = currentHistoryPage * ITEMS_PER_PAGE;
-  const indexOfFirstItem = indexOfLastItem - ITEMS_PER_PAGE;
-  const currentPageData = historyData.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(historyData.length / ITEMS_PER_PAGE);
-  // --- 历史净值状态和逻辑结束 ---
 
   const style = layoutMode === 'drawer' ? {
     border: 'none',
@@ -115,7 +572,7 @@ export default function FundCard({
         ...style,
       }}
     >
-      {/* 基金卡片标题行 */}
+      {/* 原有头部信息... */}
       <div className="row" style={{ marginBottom: 10 }}>
         <div className="title">
           {currentTab !== 'all' && currentTab !== 'fav' ? (
@@ -181,7 +638,6 @@ export default function FundCard({
         </div>
       </div>
 
-      {/* 净值与估值信息行 */}
       <div className="row" style={{ marginBottom: 12 }}>
         <Stat label="单位净值" value={f.dwjz ?? '—'} />
         {f.noValuation ? (
@@ -249,7 +705,6 @@ export default function FundCard({
         )}
       </div>
 
-      {/* 持仓收益行 */}
       <div className="row" style={{ marginBottom: 12 }}>
         {!profit ? (
           <div
@@ -349,7 +804,6 @@ export default function FundCard({
         )}
       </div>
 
-      {/* 持仓估算覆盖率提示 */}
       {f.estPricedCoverage > 0.05 && (
         <div
           style={{
@@ -364,7 +818,6 @@ export default function FundCard({
         </div>
       )}
 
-      {/* 实时估值走势图 */}
       {(() => {
         const showIntraday =
           Array.isArray(valuationSeries?.[f.code]) && valuationSeries[f.code].length >= 2;
@@ -395,14 +848,14 @@ export default function FundCard({
         );
       })()}
 
-      {/* 根据 layoutMode 决定渲染方式 */}
       {layoutMode === 'drawer' ? (
         <Tabs defaultValue={hasHoldings ? 'holdings' : 'trend'} className="w-full">
-          <TabsList className={`w-full ${hasHoldings ? 'grid grid-cols-2' : ''}`}>
+          <TabsList className={`w-full ${hasHoldings ? 'grid grid-cols-3' : 'grid grid-cols-2'}`}>
             {hasHoldings && (
               <TabsTrigger value="holdings">前10重仓股票</TabsTrigger>
             )}
             <TabsTrigger value="trend">业绩走势</TabsTrigger>
+            <TabsTrigger value="history">历史净值</TabsTrigger>
           </TabsList>
           {hasHoldings && (
             <TabsContent value="holdings" className="mt-3 outline-none">
@@ -438,10 +891,18 @@ export default function FundCard({
               hideHeader
             />
           </TabsContent>
+          <TabsContent value="history" className="mt-3 outline-none">
+            <HistoryNetValue
+              fundCode={f.code}
+              theme={theme}
+              historyCollapsed={false}
+              fetchFundHistory={fetchFundHistory}
+            />
+          </TabsContent>
         </Tabs>
       ) : (
         <>
-          {/* 前10重仓股票 (Card 模式) */}
+          {/* 原有持仓股票和业绩走势... */}
           {hasHoldings && (
             <>
               <div
@@ -500,7 +961,6 @@ export default function FundCard({
               </AnimatePresence>
             </>
           )}
-          {/* 业绩走势图 (Card 模式) */}
           <FundTrendChart
             key={`${f.code}-${theme}`}
             code={f.code}
@@ -510,110 +970,14 @@ export default function FundCard({
             theme={theme}
           />
 
-          {/* ============= 新增：历史净值区域 (Card 模式) ============= */}
-          <div style={{ marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
-            {/* 可点击的标题栏 */}
-            <div
-              className="title"
-              style={{ marginBottom: '12px', cursor: 'pointer', userSelect: 'none' }}
-              onClick={() => {
-                const newShowState = !showHistorySection;
-                setShowHistorySection(newShowState);
-                // 首次展开时，如果还没有数据，则触发加载
-                if (newShowState && historyData.length === 0 && !isLoadingHistory) {
-                  loadHistoryData();
-                }
-              }}
-            >
-              <div className="row" style={{ width: '100%', flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>历史净值</span>
-                  <ChevronIcon
-                    width="16"
-                    height="16"
-                    className="muted"
-                    style={{
-                      transform: showHistorySection ? 'rotate(0deg)' : 'rotate(-90deg)',
-                      transition: 'transform 0.2s ease',
-                    }}
-                  />
-                </div>
-                <span className="muted">
-                  {historyData.length > 0 ? `共 ${historyData.length} 条` : ''}
-                </span>
-              </div>
-            </div>
-
-            {/* 展开/收起的内容区域 */}
-            <AnimatePresence>
-              {showHistorySection && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.3, ease: 'easeInOut' }}
-                  style={{ overflow: 'hidden' }}
-                >
-                  {isLoadingHistory ? (
-                    <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)', fontSize: '14px' }}>
-                      加载历史净值中...
-                    </div>
-                  ) : historyData.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)', fontSize: '14px' }}>
-                      暂无历史净值数据
-                    </div>
-                  ) : (
-                    <>
-                      {/* 历史净值列表 */}
-                      <div className="list" style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '12px' }}>
-                        {currentPageData.map((item, idx) => (
-                          <div className="item" key={`${item.date}-${idx}`} style={{ padding: '8px 0' }}>
-                            <span className="name">{item.date}</span>
-                            <span className="weight">{item.value?.toFixed(4) ?? '--'}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* 分页控件 */}
-                      {totalPages > 1 && (
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            gap: '12px',
-                            fontSize: '14px',
-                            padding: '8px 0',
-                          }}
-                        >
-                          <button
-                            className="icon-button"
-                            onClick={() => setCurrentHistoryPage((p) => Math.max(1, p - 1))}
-                            disabled={currentHistoryPage === 1}
-                            style={{ padding: '4px 12px', fontSize: '13px' }}
-                          >
-                            上一页
-                          </button>
-                          <span className="muted">
-                            第 {currentHistoryPage} 页，共 {totalPages} 页
-                          </span>
-                          <button
-                            className="icon-button"
-                            onClick={() => setCurrentHistoryPage((p) => Math.min(totalPages, p + 1))}
-                            disabled={currentHistoryPage === totalPages}
-                            style={{ padding: '4px 12px', fontSize: '13px' }}
-                          >
-                            下一页
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-          {/* ============= 历史净值区域结束 ============= */}
+          {/* 添加历史净值组件 */}
+          <HistoryNetValue
+            fundCode={f.code}
+            theme={theme}
+            historyCollapsed={collapsedHistories?.has(f.code)}
+            onToggleHistoryCollapse={onToggleHistoryCollapse}
+            fetchFundHistory={fetchFundHistory}
+          />
         </>
       )}
     </motion.div>
