@@ -24,7 +24,8 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
 } from './Icons';
-import { fetchFundNetValueHistoryByRange } from '../api/fund';
+// 关键修改1：导入新的智能函数
+import { fetchFundNetValueHistoryByRangeSmart, clearFundHistoryCache } from '../api/fund';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -93,16 +94,26 @@ export default function FundCard({
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [perPage, setPerPage] = useState(20);
+  const [perPage, setPerPage] = useState(50); // 增加默认每页条数
+  // 关键修改2：添加批量加载状态
+  const [loadingAllData, setLoadingAllData] = useState(false);
+  const [forceRefresh, setForceRefresh] = useState(false);
 
-  // 获取历史净值数据（支持分页）
-  const loadHistoryData = useCallback(async (range, page = 1) => {
+  // 关键修改3：获取历史净值数据（使用智能函数）
+  const loadHistoryData = useCallback(async (range, page = 1, force = false) => {
     if (!f?.code || historyLoading) return;
     
     setHistoryLoading(true);
     setHistoryError(null);
+    
+    // 如果是"全部"范围，显示批量加载状态
+    if (range === 'all' && page === 1) {
+      setLoadingAllData(true);
+    }
+    
     try {
-      const result = await fetchFundNetValueHistoryByRange(f.code, range, page, perPage);
+      // 使用新的智能获取函数
+      const result = await fetchFundNetValueHistoryByRangeSmart(f.code, range, page, perPage);
       
       if (result && result.data) {
         setHistoryData(result.data);
@@ -110,6 +121,8 @@ export default function FundCard({
         setCurrentPage(result.currentPage || 1);
         setTotalCount(result.totalCount || 0);
         setHistoryLastUpdated(Date.now());
+        
+        console.log(`历史净值加载完成: ${result.data.length}条, 总页数: ${result.totalPages}, 总记录: ${result.totalCount}`);
       } else {
         setHistoryData([]);
         setTotalPages(1);
@@ -125,6 +138,8 @@ export default function FundCard({
       setTotalCount(0);
     } finally {
       setHistoryLoading(false);
+      setLoadingAllData(false);
+      setForceRefresh(false);
     }
   }, [f?.code, historyLoading, perPage]);
 
@@ -132,9 +147,9 @@ export default function FundCard({
   useEffect(() => {
     if (f?.code && historyExpanded) {
       setCurrentPage(1);
-      loadHistoryData(historyRange, 1);
+      loadHistoryData(historyRange, 1, forceRefresh);
     }
-  }, [f?.code, historyRange, historyExpanded, loadHistoryData]);
+  }, [f?.code, historyRange, historyExpanded, forceRefresh, loadHistoryData]);
 
   // 处理页码变化
   const handlePageChange = (newPage) => {
@@ -148,6 +163,7 @@ export default function FundCard({
   const handlePerPageChange = (newPerPage) => {
     setPerPage(newPerPage);
     setCurrentPage(1);
+    loadHistoryData(historyRange, 1);
   };
 
   // 处理时间范围变更
@@ -161,6 +177,16 @@ export default function FundCard({
     loadHistoryData(historyRange, currentPage);
   };
 
+  // 关键修改4：强制刷新所有数据
+  const handleForceRefreshAllData = () => {
+    if (!f?.code) return;
+    
+    // 清除缓存
+    clearFundHistoryCache(f.code);
+    setForceRefresh(true);
+    setCurrentPage(1);
+  };
+
   // 格式化日期显示
   const formatHistoryDate = (dateStr) => {
     const d = dayjs(dateStr);
@@ -169,6 +195,32 @@ export default function FundCard({
 
   // 渲染分页控制器
   const renderPagination = () => {
+    // 如果是批量加载模式且只有一页，不显示分页
+    if (historyRange === 'all' && loadingAllData) {
+      return null;
+    }
+    
+    if (totalPages <= 1 && totalCount <= perPage) {
+      return (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          marginTop: '12px',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{
+            fontSize: '12px',
+            color: 'var(--muted)',
+            whiteSpace: 'nowrap'
+          }}>
+            共{totalCount}条记录
+          </div>
+        </div>
+      );
+    }
+    
     if (totalPages <= 1) return null;
     
     return (
@@ -203,10 +255,11 @@ export default function FundCard({
               outline: 'none'
             }}
           >
-            <option value={10}>10条</option>
             <option value={20}>20条</option>
             <option value={50}>50条</option>
             <option value={100}>100条</option>
+            <option value={200}>200条</option>
+            <option value={500}>500条</option>
           </select>
         </div>
         
@@ -320,7 +373,8 @@ export default function FundCard({
 
   // 渲染历史净值表格
   const renderHistoryTable = () => {
-    if (historyLoading) {
+    // 关键修改5：优化加载状态显示
+    if (historyLoading || loadingAllData) {
       return (
         <div style={{ 
           padding: '48px 20px', 
@@ -345,7 +399,12 @@ export default function FundCard({
               to { transform: rotate(360deg); }
             }
           `}</style>
-          加载第{currentPage}页数据中...
+          {loadingAllData ? '正在批量获取全部历史数据...' : `加载第${currentPage}页数据中...`}
+          {loadingAllData && (
+            <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '8px' }}>
+              这可能需要一些时间，请稍候...
+            </div>
+          )}
         </div>
       );
     }
@@ -404,7 +463,7 @@ export default function FundCard({
     return (
       <>
         <div className="scrollbar-y-styled" style={{ 
-          maxHeight: '320px',
+          maxHeight: '400px',
           overflowY: 'auto',
           borderRadius: '8px',
           border: '1px solid var(--border)',
@@ -978,6 +1037,18 @@ export default function FundCard({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <CalendarIcon width="16" height="16" className="muted" />
               <span style={{ fontWeight: 600, fontSize: '15px' }}>历史净值</span>
+              {/* 关键修改6：显示已加载记录数 */}
+              {historyRange === 'all' && totalCount > 0 && (
+                <span style={{ 
+                  fontSize: '11px', 
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  background: 'rgba(34, 211, 238, 0.1)',
+                  color: 'var(--primary)'
+                }}>
+                  已加载{totalCount}条
+                </span>
+              )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {historyLastUpdated && (
@@ -1028,6 +1099,42 @@ export default function FundCard({
               transition={{ duration: 0.3, ease: 'easeInOut' }}
               style={{ overflow: 'hidden' }}
             >
+              {/* 关键修改7：强制刷新按钮（当数据量很少时显示） */}
+              {historyRange === 'all' && totalCount < 100 && (
+                <div style={{ 
+                  marginBottom: '12px',
+                  padding: '8px',
+                  borderRadius: '6px',
+                  background: 'rgba(255, 193, 7, 0.1)',
+                  border: '1px solid rgba(255, 193, 7, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}>
+                  <div style={{ fontSize: '12px', color: 'var(--warning)' }}>
+                    检测到数据较少，尝试强制刷新？
+                  </div>
+                  <button
+                    onClick={handleForceRefreshAllData}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '11px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--warning)',
+                      background: 'rgba(255, 193, 7, 0.2)',
+                      color: 'var(--warning)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <RefreshIcon width="10" height="10" />
+                    强制刷新
+                  </button>
+                </div>
+              )}
+              
               {/* 日期范围选择器 */}
               <div style={{ 
                 display: 'flex', 
@@ -1093,7 +1200,9 @@ export default function FundCard({
                 borderRadius: '6px',
                 backgroundColor: theme === 'light' ? 'rgba(0, 0, 0, 0.03)' : 'rgba(255, 255, 255, 0.03)'
               }}>
-                数据来源：东方财富网 | 第{currentPage}页/共{totalPages}页
+                数据来源：东方财富网
+                {historyRange === 'all' && totalCount > 0 && ` | 共${totalCount}条记录`}
+                {totalPages > 1 && ` | 第${currentPage}页/共${totalPages}页`}
               </div>
             </motion.div>
           )}
