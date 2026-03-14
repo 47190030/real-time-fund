@@ -209,7 +209,7 @@ export default function FundCard({
         <div className="actions">
           <div className="badge-v">
             <span>{f.noValuation ? '净值日期' : '估值时间'}</span>
-            <strong>{f.noValuation ? (f.jzrq || '-') : (f.gztime || f.time || '-')}</strong>
+            <strong>{f.noValuation ? (f.jzrq) : (f.gztime || f.time)}</strong>
           </div>
           <div className="row" style={{ gap: 4 }}>
             <button
@@ -576,12 +576,14 @@ export default function FundCard({
                     <tbody>
                       {displayedData.map((item, idx) => {
                         const getChangeColor = () => {
-                          if (!item.changeFormatted || item.changeFormatted === '--') {
+                          if (item.change === null || item.change === undefined) {
                             return 'text-muted-foreground';
                           }
-                          return item.changeFormatted.startsWith('+') 
+                          return item.change > 0 
                             ? 'text-red-400 dark:text-red-300'
-                            : 'text-green-400 dark:text-green-300';
+                            : item.change < 0 
+                              ? 'text-green-400 dark:text-green-300'
+                              : 'text-muted-foreground';
                         };
 
                         return (
@@ -589,7 +591,9 @@ export default function FundCard({
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.date}</td>
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.value.toFixed(4)}</td>
                             <td className={`p-3 whitespace-nowrap font-medium text-base ${getChangeColor()}`}>
-                              {item.changeFormatted}
+                              {item.change !== null && item.change !== undefined
+                                ? `${item.change > 0 ? '+' : ''}${Math.abs(item.change).toFixed(2)}%`
+                                : '--'}
                             </td>
                           </tr>
                         );
