@@ -759,17 +759,20 @@ export const parseFundTextWithLLM = async (text) => {
 /**
  * 从 fundmobapi.eastmoney.com 获取包含日涨跌幅的基金历史净值 (JSONP版本)
  * 使用JSONP方式绕过CORS限制，与项目中其他接口调用方式保持一致
+ * 此接口直接返回包含 JZZZL(日增长率) 字段的完整数据
  */
 export const fetchFundHistoryFromMobAPI = async (code, range = '1y') => {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return [];
+  }
 
   const rangeMap = {
-    '1m': 'y',
+    '1m': 'y',  // 先用年范围，接口通常返回足够数据
     '3m': 'y',
-    '6m': 'y',
-    '1y': 'y',
-    '3y': 'y3',
-    'all': 'y'
+    '6m': 'y', 
+    '1y': 'y',  // 确认可用
+    '3y': 'y3', // 可能需要实测确认
+    'all': 'y'  // 先用年
   };
   
   const apiRange = rangeMap[range] || 'y';
@@ -778,30 +781,48 @@ export const fetchFundHistoryFromMobAPI = async (code, range = '1y') => {
     // 生成唯一的回调函数名
     const callbackName = `jsonpFundHistory_${Date.now()}_${Math.random().toString(36).substr(2)}`;
     
-    // 构造 JSONP 请求的 URL
+    // 构造JSONP请求URL
     const url = `https://fundmobapi.eastmoney.com/FundMApi/FundNetDiagram.ashx?FCODE=${code}&RANGE=${apiRange}&deviceid=Wap&plat=Wap&product=EFund&version=2.0.0&callback=${callbackName}&_=${Date.now()}`;
+    
+    let timeoutId = null;
+    const TIMEOUT_MS = 10000; // 10秒超时
+    
+    // 清理函数
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (window[callbackName]) {
+        delete window[callbackName];
+      }
+      if (script && script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+    };
+    
+    // 设置超时
+    timeoutId = setTimeout(() => {
+      cleanup();
+      console.warn(`基金 ${code} 历史净值请求超时`);
+      resolve([]);
+    }, TIMEOUT_MS);
     
     // 定义全局回调函数
     window[callbackName] = (response) => {
-      // 清理：移除script标签和全局回调函数
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-      delete window[callbackName];
+      cleanup();
       
-      if (timeoutId) clearTimeout(timeoutId);
-      
-      // 处理响应数据
       if (response && response.ErrCode === 0 && Array.isArray(response.Datas)) {
         const historyData = [];
         
         for (const item of response.Datas) {
-          const dateStr = item.FSRQ;
-          const value = parseFloat(item.DWJZ);
+          const dateStr = item.FSRQ; // 净值日期
+          const value = parseFloat(item.DWJZ); // 单位净值
           
           let change = null;
           let changeFormatted = '--';
           
+          // 解析日涨跌幅 (关键字段)
           if (item.JZZZL !== undefined && item.JZZZL !== null && String(item.JZZZL).trim() !== '') {
             change = parseFloat(item.JZZZL);
             if (!isNaN(change)) {
@@ -813,9 +834,9 @@ export const fetchFundHistoryFromMobAPI = async (code, range = '1y') => {
             historyData.push({
               date: dateStr,
               value,
-              change,
-              changeFormatted,
-              totalValue: parseFloat(item.LJJZ) || null,
+              change,          // 涨跌幅数值，用于颜色判断
+              changeFormatted, // 格式化涨跌幅，用于直接显示
+              totalValue: parseFloat(item.LJJZ) || null, // 累计净值
             });
           }
         }
@@ -823,37 +844,24 @@ export const fetchFundHistoryFromMobAPI = async (code, range = '1y') => {
         // 按日期倒序排列
         resolve(historyData.sort((a, b) => new Date(b.date) - new Date(a.date)));
       } else {
-        console.warn(`基金 ${code} 历史净值接口返回异常:`, response?.ErrMsg);
+        console.warn(`基金 ${code} 历史净值接口返回异常:`, response?.ErrMsg || '无数据');
         resolve([]);
       }
     };
     
-    // 创建script标签
+    // 创建script标签发起JSONP请求
     const script = document.createElement('script');
     script.src = url;
+    
     script.onerror = () => {
-      // 请求失败时清理并返回空数组
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-      delete window[callbackName];
-      if (timeoutId) clearTimeout(timeoutId);
-      console.error(`JSONP请求失败: ${url}`);
+      cleanup();
+      console.error(`基金 ${code} 历史净值请求失败`);
       resolve([]);
     };
     
-    // 设置超时（10秒）
-    const timeoutId = setTimeout(() => {
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-      delete window[callbackName];
-      console.error(`JSONP请求超时: ${url}`);
-      resolve([]);
-    }, 10000);
-    
-    // 发起请求
+    // 添加到文档中发起请求
     document.head.appendChild(script);
   });
 };
+
 
