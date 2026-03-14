@@ -18,7 +18,8 @@ import {
   SwitchIcon,
   TrashIcon,
 } from './Icons';
-import { fetchFundHistory } from '@/app/api/fund';
+// 关键修改1：导入新的函数
+import { fetchFundHistoryFromMobAPI } from '@/app/api/fund';
 import { useState, useEffect, useCallback } from 'react';
 
 dayjs.extend(utc);
@@ -105,41 +106,19 @@ export default function FundCard({
     { key: 'all', label: '全部' }
   ];
 
-  const calculateDailyChange = (current, previous) => {
-    if (!previous || previous.value === 0 || current.value === previous.value) {
-      return { value: null, formatted: '--' };
-    }
-    
-    const change = ((current.value - previous.value) / previous.value) * 100;
-    const formatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
-    return { value: change, formatted };
-  };
-
+  // 关键修改2：loadHistoryData 函数，使用新的数据获取函数
   const loadHistoryData = useCallback(async (code, range) => {
     if (!code || loadingHistory) return;
     setLoadingHistory(true);
     try {
-      const data = await fetchFundHistory(code, range);
+      // 调用新的函数，它直接返回包含涨跌幅和已排序的数据
+      const data = await fetchFundHistoryFromMobAPI(code, range);
       
-      const sortedData = [...(data || [])].sort((a, b) => {
-        return new Date(b.date) - new Date(a.date);
-      });
-
-      const dataWithChange = sortedData.map((item, index) => {
-        const prevItem = sortedData[index + 1];
-        const change = calculateDailyChange(item, prevItem);
-        return {
-          ...item,
-          change: change.value,
-          changeFormatted: change.formatted
-        };
-      });
-
-      setAllHistoryData(dataWithChange);
-      
+      // 新函数返回的数据格式： [{date, value, change, changeFormatted}, ...]，且已按日期倒序
+      setAllHistoryData(data);
       setCurrentPage(1);
-      setDisplayedData(dataWithChange.slice(0, PAGE_SIZE));
-      setHasMoreData(dataWithChange.length > PAGE_SIZE);
+      setDisplayedData(data.slice(0, PAGE_SIZE));
+      setHasMoreData(data.length > PAGE_SIZE);
     } catch (error) {
       console.error('获取历史净值失败:', error);
       setAllHistoryData([]);
@@ -253,6 +232,7 @@ export default function FundCard({
         </div>
       </div>
 
+      {/* 基金概览信息部分保持不变 */}
       <div className="row" style={{ marginBottom: 12 }}>
         <Stat label="单位净值" value={f.dwjz ?? '—'} />
         {f.noValuation ? (
@@ -597,16 +577,16 @@ export default function FundCard({
                       </tr>
                     </thead>
                     <tbody>
+                      {/* 表格渲染逻辑保持不变，因为新函数返回的数据格式完全匹配 */}
                       {displayedData.map((item, idx) => {
                         const colorClass = getStatColorClass(item.change);
                         return (
                           <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.date}</td>
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.value.toFixed(4)}</td>
+                            {/* 现在 item.changeFormatted 直接来自接口，不会是 '--' */}
                             <td className={`p-3 whitespace-nowrap font-medium text-base ${colorClass}`}>
-                              {item.change !== null && item.change !== undefined
-                                ? `${item.change > 0 ? '+' : ''}${item.change.toFixed(2)}%`
-                                : '--'}
+                              {item.changeFormatted}
                             </td>
                           </tr>
                         );
