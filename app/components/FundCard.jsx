@@ -50,9 +50,6 @@ const formatDisplayDate = (value) => {
 
 // Stat 组件的颜色判断逻辑
 const getStatColorClass = (delta) => {
-  if (delta === null || delta === undefined) {
-    return '';
-  }
   if (delta > 0) return 'up';
   if (delta < 0) return 'down';
   return '';
@@ -108,53 +105,38 @@ export default function FundCard({
     { key: 'all', label: '全部' }
   ];
 
+  const calculateDailyChange = (current, previous) => {
+    if (!previous || previous.value === 0 || current.value === previous.value) {
+      return { value: null, formatted: '--' };
+    }
+    
+    const change = ((current.value - previous.value) / previous.value) * 100;
+    const formatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+    return { value: change, formatted };
+  };
+
   const loadHistoryData = useCallback(async (code, range) => {
     if (!code || loadingHistory) return;
     setLoadingHistory(true);
     try {
       const data = await fetchFundHistory(code, range);
       
-      if (!data || data.length === 0) {
-        setAllHistoryData([]);
-        setDisplayedData([]);
-        setHasMoreData(false);
-        return;
-      }
-      
-      // 对数据进行倒序排列，确保最新日期在前面
-      const sortedData = [...data].sort((a, b) => {
-        return new Date(b.FSRQ) - new Date(a.FSRQ);
+      const sortedData = [...(data || [])].sort((a, b) => {
+        return new Date(b.date) - new Date(a.date);
       });
 
-      // 处理数据格式，使用API返回的字段
-      const dataWithChange = sortedData.map((item) => {
-        // 解析涨跌幅
-        let change = null;
-        let changeFormatted = '--';
-        
-        if (item.JZZZL !== undefined && item.JZZZL !== null && item.JZZZL !== '--') {
-          // 将字符串转换为数字
-          const changeValue = parseFloat(item.JZZZL);
-          if (!isNaN(changeValue)) {
-            change = changeValue;
-            changeFormatted = `${changeValue > 0 ? '+' : ''}${changeValue.toFixed(2)}%`;
-          }
-        }
-        
+      const dataWithChange = sortedData.map((item, index) => {
+        const prevItem = sortedData[index + 1];
+        const change = calculateDailyChange(item, prevItem);
         return {
-          date: item.FSRQ, // 日期
-          value: parseFloat(item.DWJZ) || 0, // 单位净值
-          change: change, // 涨跌幅数值
-          changeFormatted: changeFormatted, // 格式化后的涨跌幅字符串
-          ljjz: parseFloat(item.LJJZ) || 0, // 累计净值
-          navType: item.NAVTYPE, // 净值类型
-          originalData: item // 保留原始数据
+          ...item,
+          change: change.value,
+          changeFormatted: change.formatted
         };
       });
 
-      console.log('处理后的历史数据:', dataWithChange); // 调试用
-      
       setAllHistoryData(dataWithChange);
+      
       setCurrentPage(1);
       setDisplayedData(dataWithChange.slice(0, PAGE_SIZE));
       setHasMoreData(dataWithChange.length > PAGE_SIZE);
@@ -622,7 +604,9 @@ export default function FundCard({
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.date}</td>
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.value.toFixed(4)}</td>
                             <td className={`p-3 whitespace-nowrap font-medium text-base ${colorClass}`}>
-                              {item.changeFormatted}
+                              {item.change !== null && item.change !== undefined
+                                ? `${item.change > 0 ? '+' : ''}${item.change.toFixed(2)}%`
+                                : '--'}
                             </td>
                           </tr>
                         );
