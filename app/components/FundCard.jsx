@@ -1,6 +1,5 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -19,7 +18,8 @@ import {
   SwitchIcon,
   TrashIcon,
 } from './Icons';
-import { fetchFundHistoryFromMobAPI } from '@/app/api/fund';
+import { fetchFundHistory } from '@/app/api/fund';
+import { useState, useEffect, useCallback } from 'react';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -55,156 +55,6 @@ const getStatColorClass = (delta) => {
   return '';
 };
 
-// 虚拟滚动表格组件
-const VirtualScrollTable = ({ 
-  data, 
-  loading, 
-  hasMore, 
-  onLoadMore,
-  rowHeight = 53,
-  buffer = 5,
-  theme = 'light'
-}) => {
-  const containerRef = useRef(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [containerHeight, setContainerHeight] = useState(400); // 默认高度
-
-  // 更新容器高度
-  useEffect(() => {
-    const updateHeight = () => {
-      if (containerRef.current) {
-        const height = Math.min(500, window.innerHeight * 0.6);
-        setContainerHeight(height);
-      }
-    };
-    
-    updateHeight();
-    window.addEventListener('resize', updateHeight);
-    return () => window.removeEventListener('resize', updateHeight);
-  }, []);
-
-  // 计算可见行
-  const { visibleData, startIndex, totalHeight } = useMemo(() => {
-    if (!data.length) {
-      return { visibleData: [], startIndex: 0, totalHeight: 0 };
-    }
-
-    const visibleRowCount = Math.ceil(containerHeight / rowHeight);
-    const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - buffer);
-    const endIndex = Math.min(
-      data.length - 1,
-      startIndex + visibleRowCount + buffer * 2
-    );
-
-    const visibleData = data.slice(startIndex, endIndex + 1);
-    const totalHeight = data.length * rowHeight;
-
-    return { visibleData, startIndex, totalHeight };
-  }, [data, scrollTop, containerHeight, rowHeight, buffer]);
-
-  // 处理滚动
-  const handleScroll = useCallback((e) => {
-    if (!containerRef.current) return;
-    
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    setScrollTop(scrollTop);
-
-    // 检查是否滚动到底部
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
-    if (isAtBottom && hasMore && !loading) {
-      onLoadMore();
-    }
-  }, [hasMore, loading, onLoadMore]);
-
-  // 行渲染
-  const renderRow = (item, index) => {
-    const actualIndex = startIndex + index;
-    const top = actualIndex * rowHeight;
-    const colorClass = getStatColorClass(item.change);
-    const bgColor = actualIndex % 2 === 0 
-      ? (theme === 'dark' ? 'var(--background)' : '#ffffff')
-      : (theme === 'dark' ? 'var(--muted)' : '#f9f9f9');
-
-    return (
-      <div
-        key={`${item.date}-${actualIndex}`}
-        style={{
-          position: 'absolute',
-          top: `${top}px`,
-          left: 0,
-          right: 0,
-          height: `${rowHeight}px`,
-          display: 'flex',
-          alignItems: 'center',
-          backgroundColor: bgColor,
-          borderBottom: '1px solid var(--border)',
-        }}
-        className="hover:bg-secondary/20 transition-colors"
-      >
-        <div className="flex-1 p-3 whitespace-nowrap font-medium text-base min-w-[120px]">
-          {item.date}
-        </div>
-        <div className="flex-1 p-3 whitespace-nowrap font-medium text-base min-w-[120px]">
-          {item.value.toFixed(4)}
-        </div>
-        <div className={`flex-1 p-3 whitespace-nowrap font-medium text-base min-w-[120px] ${colorClass}`}>
-          {item.changeFormatted}
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="border border-border rounded-md overflow-hidden">
-      {/* 表头 - 固定 */}
-      <div className="grid grid-cols-3 bg-secondary text-secondary-foreground font-medium text-base sticky top-0 z-10">
-        <div className="p-3 whitespace-nowrap">日期</div>
-        <div className="p-3 whitespace-nowrap">单位净值</div>
-        <div className="p-3 whitespace-nowrap">日涨跌幅</div>
-      </div>
-
-      {/* 虚拟滚动容器 */}
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        style={{
-          height: `${containerHeight}px`,
-          overflowY: 'auto',
-          position: 'relative',
-        }}
-      >
-        <div style={{ height: `${totalHeight}px`, position: 'relative' }}>
-          {visibleData.map((item, index) => renderRow(item, index))}
-        </div>
-
-        {/* 底部加载状态 */}
-        {loading && (
-          <div 
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              textAlign: 'center',
-              padding: '12px',
-              backgroundColor: 'var(--background)',
-              borderTop: '1px solid var(--border)'
-            }}
-          >
-            正在加载更多历史净值...
-          </div>
-        )}
-      </div>
-
-      {/* 分页信息 */}
-      <div className="p-3 text-xs text-muted-foreground border-t border-border bg-secondary/50">
-        已加载 {data.length} 条记录
-        {hasMore && !loading && '，滚动到底部或点击"加载更多"以获取更多'}
-      </div>
-    </div>
-  );
-};
-
 export default function FundCard({
   fund: f,
   todayStr,
@@ -236,21 +86,15 @@ export default function FundCard({
   const profit = getHoldingProfit?.(f, holding) ?? null;
   const hasHoldings = f.holdingsIsLastQuarter && Array.isArray(f.holdings) && f.holdings.length > 0;
 
-  // 历史净值相关状态
   const [showHistory, setShowHistory] = useState(false);
   const [historyRange, setHistoryRange] = useState('1m');
   const [allHistoryData, setAllHistoryData] = useState([]);
+  const [displayedData, setDisplayedData] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [historyPagination, setHistoryPagination] = useState({
-    currentPage: 0,
-    totalPages: 1,
-    hasMore: false,
-    totalRecords: 0
-  });
+  const [hasMoreData, setHasMoreData] = useState(false);
 
-  const PAGE_SIZE = 20;
-  const loadHistoryTimerRef = useRef(null);
-  const isMountedRef = useRef(true);
+  const PAGE_SIZE = 5;
 
   const timeRangeConfig = [
     { key: '1m', label: '1个月' },
@@ -261,96 +105,67 @@ export default function FundCard({
     { key: 'all', label: '全部' }
   ];
 
-  // 清理函数
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-      if (loadHistoryTimerRef.current) {
-        clearTimeout(loadHistoryTimerRef.current);
-      }
-    };
-  }, []);
+  const calculateDailyChange = (current, previous) => {
+    if (!previous || previous.value === 0 || current.value === previous.value) {
+      return { value: null, formatted: '--' };
+    }
+    
+    const change = ((current.value - previous.value) / previous.value) * 100;
+    const formatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+    return { value: change, formatted };
+  };
 
-  // 加载历史数据函数
-  const loadHistoryData = useCallback(async (code, range, page = 1, isLoadMore = false) => {
-    if (!code || loadingHistory || !isMountedRef.current) return;
-    
+  const loadHistoryData = useCallback(async (code, range) => {
+    if (!code || loadingHistory) return;
     setLoadingHistory(true);
-    
     try {
-      const result = await fetchFundHistoryFromMobAPI(code, range, page, PAGE_SIZE);
+      const data = await fetchFundHistory(code, range);
       
-      if (!isMountedRef.current) return;
+      const sortedData = [...(data || [])].sort((a, b) => {
+        return new Date(b.date) - new Date(a.date);
+      });
+
+      const dataWithChange = sortedData.map((item, index) => {
+        const prevItem = sortedData[index + 1];
+        const change = calculateDailyChange(item, prevItem);
+        return {
+          ...item,
+          change: change.value,
+          changeFormatted: change.formatted
+        };
+      });
+
+      setAllHistoryData(dataWithChange);
       
-      if (result.data && Array.isArray(result.data)) {
-        if (isLoadMore) {
-          // 加载更多：合并数据，去重
-          const existingDates = new Set(allHistoryData.map(item => item.date));
-          const newData = result.data.filter(item => !existingDates.has(item.date));
-          setAllHistoryData(prev => [...prev, ...newData]);
-        } else {
-          // 首次加载或切换范围：替换数据
-          setAllHistoryData(result.data);
-        }
-        
-        setHistoryPagination({
-          currentPage: result.currentPage || page,
-          totalPages: result.totalPages || 1,
-          hasMore: result.hasMore || false,
-          totalRecords: result.totalRecords || 0
-        });
-      }
+      setCurrentPage(1);
+      setDisplayedData(dataWithChange.slice(0, PAGE_SIZE));
+      setHasMoreData(dataWithChange.length > PAGE_SIZE);
     } catch (error) {
       console.error('获取历史净值失败:', error);
+      setAllHistoryData([]);
+      setDisplayedData([]);
+      setHasMoreData(false);
     } finally {
-      if (isMountedRef.current) {
-        setLoadingHistory(false);
-      }
+      setLoadingHistory(false);
     }
-  }, [loadingHistory, PAGE_SIZE, allHistoryData]);
+  }, [loadingHistory, PAGE_SIZE]);
 
-  // 处理加载更多
-  const handleLoadMore = useCallback(() => {
-    if (!f?.code || !historyPagination.hasMore || loadingHistory) return;
+  const loadMoreData = () => {
+    const nextPage = currentPage + 1;
+    const startIndex = 0;
+    const endIndex = nextPage * PAGE_SIZE;
+    const newData = allHistoryData.slice(startIndex, endIndex);
     
-    const nextPage = historyPagination.currentPage + 1;
-    loadHistoryData(f.code, historyRange, nextPage, true);
-  }, [f?.code, historyRange, historyPagination, loadingHistory, loadHistoryData]);
+    setDisplayedData(newData);
+    setCurrentPage(nextPage);
+    setHasMoreData(allHistoryData.length > newData.length);
+  };
 
-  // 处理时间范围切换
-  const handleRangeChange = useCallback((key) => {
-    if (loadingHistory || key === historyRange) return;
-    
-    // 清除之前的定时器
-    if (loadHistoryTimerRef.current) {
-      clearTimeout(loadHistoryTimerRef.current);
-    }
-    
-    // 立即更新状态
-    setHistoryRange(key);
-    setAllHistoryData([]);
-    setHistoryPagination({
-      currentPage: 0,
-      totalPages: 1,
-      hasMore: false,
-      totalRecords: 0
-    });
-    
-    // 防抖：延迟300ms后加载数据
-    loadHistoryTimerRef.current = setTimeout(() => {
-      if (f?.code) {
-        loadHistoryData(f.code, key, 1, false);
-      }
-    }, 300);
-  }, [f?.code, historyRange, loadingHistory, loadHistoryData]);
-
-  // 初始加载或切换基金
   useEffect(() => {
-    if (showHistory && f?.code) {
-      loadHistoryData(f.code, historyRange, 1, false);
+    if (f?.code) {
+      loadHistoryData(f.code, historyRange);
     }
-  }, [f?.code, showHistory, loadHistoryData]);
+  }, [f?.code, historyRange, loadHistoryData]);
 
   const style = layoutMode === 'drawer' ? {
     border: 'none',
@@ -369,7 +184,6 @@ export default function FundCard({
         ...style,
       }}
     >
-      {/* 基金头部信息 */}
       <div className="row" style={{ marginBottom: 10 }}>
         <div className="title">
           {currentTab !== 'all' && currentTab !== 'fav' ? (
@@ -439,7 +253,6 @@ export default function FundCard({
         </div>
       </div>
 
-      {/* 基金概览信息 */}
       <div className="row" style={{ marginBottom: 12 }}>
         <Stat label="单位净值" value={f.dwjz ?? '—'} />
         {f.noValuation ? (
@@ -507,7 +320,6 @@ export default function FundCard({
         )}
       </div>
 
-      {/* 持仓和收益信息 */}
       <div className="row" style={{ marginBottom: 12 }}>
         {!profit ? (
           <div
@@ -621,7 +433,6 @@ export default function FundCard({
         </div>
       )}
 
-      {/* 实时估值图表 */}
       {(() => {
         const showIntraday =
           Array.isArray(valuationSeries?.[f.code]) && valuationSeries[f.code].length >= 2;
@@ -652,7 +463,6 @@ export default function FundCard({
         );
       })()}
 
-      {/* 前10重仓股票 */}
       {hasHoldings && (
         <>
           <div
@@ -712,7 +522,6 @@ export default function FundCard({
         </>
       )}
 
-      {/* 业绩走势图 */}
       <div style={{ marginTop: '16px', marginBottom: '16px' }}>
         <FundTrendChart
           key={`${f.code}-${theme}`}
@@ -724,7 +533,6 @@ export default function FundCard({
         />
       </div>
 
-      {/* 历史净值部分 */}
       <div
         style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none' }}
         className="title"
@@ -759,7 +567,6 @@ export default function FundCard({
             style={{ overflow: 'hidden' }}
           >
             <div className="space-y-3">
-              {/* 时间范围选择器 */}
               <div className="flex gap-1 sm:gap-2 flex-wrap overflow-x-auto py-1">
                 {timeRangeConfig.map(({ key, label }) => (
                   <button
@@ -769,7 +576,7 @@ export default function FundCard({
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                     }`}
-                    onClick={() => handleRangeChange(key)}
+                    onClick={() => setHistoryRange(key)}
                     disabled={loadingHistory}
                   >
                     {label}
@@ -777,33 +584,51 @@ export default function FundCard({
                 ))}
               </div>
 
-              {loadingHistory && allHistoryData.length === 0 ? (
+              {loadingHistory ? (
                 <div className="text-center py-4 text-muted text-base">加载中...</div>
-              ) : allHistoryData.length > 0 ? (
-                <>
-                  {/* 使用虚拟滚动表格 */}
-                  <VirtualScrollTable
-                    data={allHistoryData}
-                    loading={loadingHistory}
-                    hasMore={historyPagination.hasMore}
-                    onLoadMore={handleLoadMore}
-                    rowHeight={53}
-                    buffer={5}
-                    theme={theme}
-                  />
-
-                  {/* 手动加载更多按钮（备用） */}
-                  {historyPagination.hasMore && !loadingHistory && (
+              ) : displayedData.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-lg">日期</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-lg">单位净值</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-lg">日涨跌幅</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedData.map((item, idx) => {
+                        const colorClass = getStatColorClass(item.change);
+                        return (
+                          <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
+                            <td className="p-3 whitespace-nowrap font-medium text-base">{item.date}</td>
+                            <td className="p-3 whitespace-nowrap font-medium text-base">{item.value.toFixed(4)}</td>
+                            <td className={`p-3 whitespace-nowrap font-medium text-base ${colorClass}`}>
+                              {item.change !== null && item.change !== undefined
+                                ? `${item.change > 0 ? '+' : ''}${item.change.toFixed(2)}%`
+                                : '--'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  
+                  {hasMoreData && (
                     <div className="mt-4 text-center">
                       <button
-                        onClick={handleLoadMore}
-                        className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md transition-colors w-full"
+                        onClick={loadMoreData}
+                        disabled={loadingHistory}
+                        className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full"
                       >
-                        加载更多历史净值 (第 {historyPagination.currentPage + 1} 页 / 共 {historyPagination.totalPages} 页)
+                        {loadingHistory ? '加载中...' : '加载更多历史净值'}
                       </button>
+                      <div className="text-xs text-muted-foreground mt-2">
+                        已显示 {displayedData.length} 条，共 {allHistoryData.length} 条数据
+                      </div>
                     </div>
                   )}
-                </>
+                </div>
               ) : (
                 <div className="text-center py-4 text-muted text-base">暂无历史数据</div>
               )}
