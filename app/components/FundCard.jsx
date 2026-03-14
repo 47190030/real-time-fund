@@ -18,9 +18,9 @@ import {
   SwitchIcon,
   TrashIcon,
 } from './Icons';
-// 关键修改1：导入新的函数
+// 关键修改1：导入新的函数，不再使用旧的fetchFundHistory
 import { fetchFundHistoryFromMobAPI } from '@/app/api/fund';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -96,6 +96,10 @@ export default function FundCard({
   const [hasMoreData, setHasMoreData] = useState(false);
 
   const PAGE_SIZE = 5;
+  
+  // 关键修改2：添加ref跟踪请求状态，防止无限循环
+  const hasFetchedRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   const timeRangeConfig = [
     { key: '1m', label: '1个月' },
@@ -106,26 +110,38 @@ export default function FundCard({
     { key: 'all', label: '全部' }
   ];
 
-  // 关键修改2：loadHistoryData 函数，使用新的数据获取函数
+  // 关键修改3：优化loadHistoryData函数，防止重复请求
   const loadHistoryData = useCallback(async (code, range) => {
-    if (!code || loadingHistory) return;
+    // 防止重复请求和卸载后更新状态
+    if (!code || loadingHistory || hasFetchedRef.current || !isMountedRef.current) {
+      return;
+    }
+    
+    hasFetchedRef.current = true;
     setLoadingHistory(true);
+    
     try {
-      // 调用新的函数，它直接返回包含涨跌幅和已排序的数据
+      // 使用新的函数获取数据
       const data = await fetchFundHistoryFromMobAPI(code, range);
       
-      // 新函数返回的数据格式： [{date, value, change, changeFormatted}, ...]，且已按日期倒序
+      // 再次检查组件是否仍挂载
+      if (!isMountedRef.current) return;
+      
       setAllHistoryData(data);
       setCurrentPage(1);
       setDisplayedData(data.slice(0, PAGE_SIZE));
       setHasMoreData(data.length > PAGE_SIZE);
     } catch (error) {
       console.error('获取历史净值失败:', error);
-      setAllHistoryData([]);
-      setDisplayedData([]);
-      setHasMoreData(false);
+      if (isMountedRef.current) {
+        setAllHistoryData([]);
+        setDisplayedData([]);
+        setHasMoreData(false);
+      }
     } finally {
-      setLoadingHistory(false);
+      if (isMountedRef.current) {
+        setLoadingHistory(false);
+      }
     }
   }, [loadingHistory, PAGE_SIZE]);
 
@@ -140,11 +156,39 @@ export default function FundCard({
     setHasMoreData(allHistoryData.length > newData.length);
   };
 
+  // 关键修改4：优化useEffect，防止无限重渲染
   useEffect(() => {
-    if (f?.code) {
-      loadHistoryData(f.code, historyRange);
+    isMountedRef.current = true;
+    
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    // 只有当展开历史净值、基金代码和时间范围变化时才获取数据
+    if (!showHistory || !f?.code) return;
+    
+    // 重置请求标记
+    hasFetchedRef.current = false;
+    
+    loadHistoryData(f.code, historyRange);
+    
+    return () => {
+      // 清理函数：取消进行中的请求
+      hasFetchedRef.current = true;
+    };
+  }, [f?.code, historyRange, showHistory, loadHistoryData]);
+
+  // 当切换时间范围时重置数据
+  useEffect(() => {
+    if (showHistory && f?.code) {
+      hasFetchedRef.current = false;
+      setAllHistoryData([]);
+      setDisplayedData([]);
+      setCurrentPage(1);
     }
-  }, [f?.code, historyRange, loadHistoryData]);
+  }, [historyRange, showHistory, f?.code]);
 
   const style = layoutMode === 'drawer' ? {
     border: 'none',
@@ -232,7 +276,6 @@ export default function FundCard({
         </div>
       </div>
 
-      {/* 基金概览信息部分保持不变 */}
       <div className="row" style={{ marginBottom: 12 }}>
         <Stat label="单位净值" value={f.dwjz ?? '—'} />
         {f.noValuation ? (
@@ -556,7 +599,10 @@ export default function FundCard({
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                     }`}
-                    onClick={() => setHistoryRange(key)}
+                    onClick={() => {
+                      setHistoryRange(key);
+                      hasFetchedRef.current = false; // 允许重新获取
+                    }}
                     disabled={loadingHistory}
                   >
                     {label}
@@ -577,14 +623,13 @@ export default function FundCard({
                       </tr>
                     </thead>
                     <tbody>
-                      {/* 表格渲染逻辑保持不变，因为新函数返回的数据格式完全匹配 */}
                       {displayedData.map((item, idx) => {
                         const colorClass = getStatColorClass(item.change);
                         return (
                           <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.date}</td>
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.value.toFixed(4)}</td>
-                            {/* 现在 item.changeFormatted 直接来自接口，不会是 '--' */}
+                            {/* 关键修改5：直接使用接口返回的changeFormatted字段 */}
                             <td className={`p-3 whitespace-nowrap font-medium text-base ${colorClass}`}>
                               {item.changeFormatted}
                             </td>
