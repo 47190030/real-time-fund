@@ -18,9 +18,9 @@ import {
   SwitchIcon,
   TrashIcon,
 } from './Icons';
-// 关键修改1：导入新的函数，不再使用旧的fetchFundHistory
+// 使用新的接口，它直接返回包含日涨跌幅的数据
 import { fetchFundHistoryFromMobAPI } from '@/app/api/fund';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -56,6 +56,21 @@ const getStatColorClass = (delta) => {
   return '';
 };
 
+// 优化表格行组件，使用 React.memo 避免不必要的重渲染
+const HistoryTableRow = React.memo(({ date, value, changeFormatted, change }) => {
+  const colorClass = getStatColorClass(change);
+  return (
+    <tr className="border-b border-border hover:bg-secondary/20 transition-colors">
+      <td className="p-3 whitespace-nowrap font-medium text-base">{date}</td>
+      <td className="p-3 whitespace-nowrap font-medium text-base">{value.toFixed(4)}</td>
+      <td className={`p-3 whitespace-nowrap font-medium text-base ${colorClass}`}>
+        {changeFormatted}
+      </td>
+    </tr>
+  );
+});
+HistoryTableRow.displayName = 'HistoryTableRow';
+
 export default function FundCard({
   fund: f,
   todayStr,
@@ -87,19 +102,23 @@ export default function FundCard({
   const profit = getHoldingProfit?.(f, holding) ?? null;
   const hasHoldings = f.holdingsIsLastQuarter && Array.isArray(f.holdings) && f.holdings.length > 0;
 
+  // 历史净值相关状态
   const [showHistory, setShowHistory] = useState(false);
   const [historyRange, setHistoryRange] = useState('1m');
   const [allHistoryData, setAllHistoryData] = useState([]);
-  const [displayedData, setDisplayedData] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [hasMoreData, setHasMoreData] = useState(false);
-
-  const PAGE_SIZE = 5;
   
-  // 关键修改2：添加ref跟踪请求状态，防止无限循环
+  // 分页相关状态
+  const PAGE_SIZE = 5;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [displayedData, setDisplayedData] = useState([]);
+  const [hasMoreData, setHasMoreData] = useState(false);
+  
+  // 防抖和状态跟踪相关的 ref
   const hasFetchedRef = useRef(false);
   const isMountedRef = useRef(true);
+  const loadHistoryTimerRef = useRef(null);
+  const prevRangeRef = useRef('1m');
 
   const timeRangeConfig = [
     { key: '1m', label: '1个月' },
@@ -110,42 +129,68 @@ export default function FundCard({
     { key: 'all', label: '全部' }
   ];
 
-  // 关键修改3：优化loadHistoryData函数，防止重复请求
+  // 优化：使用 useMemo 缓存表格行，避免每次渲染都重新计算
+  const tableRows = useMemo(() => {
+    return displayedData.map((item, idx) => (
+      <HistoryTableRow
+        key={`${item.date}-${idx}`}
+        date={item.date}
+        value={item.value}
+        changeFormatted={item.changeFormatted}
+        change={item.change}
+      />
+    ));
+  }, [displayedData]);
+
+  // 优化：稳定化的数据加载函数
   const loadHistoryData = useCallback(async (code, range) => {
-    // 防止重复请求和卸载后更新状态
+    // 多个条件检查，防止重复请求
     if (!code || loadingHistory || hasFetchedRef.current || !isMountedRef.current) {
       return;
     }
     
+    // 检查：如果已有数据且查询条件未变，跳过
+    if (allHistoryData.length > 0 && range === prevRangeRef.current && code === f?.code) {
+      return;
+    }
+    
     hasFetchedRef.current = true;
+    prevRangeRef.current = range;
     setLoadingHistory(true);
     
     try {
-      // 使用新的函数获取数据
       const data = await fetchFundHistoryFromMobAPI(code, range);
       
-      // 再次检查组件是否仍挂载
       if (!isMountedRef.current) return;
       
+      // 关键优化：一次性更新所有相关状态，避免中间状态导致的多次渲染
       setAllHistoryData(data);
       setCurrentPage(1);
       setDisplayedData(data.slice(0, PAGE_SIZE));
       setHasMoreData(data.length > PAGE_SIZE);
+      
     } catch (error) {
       console.error('获取历史净值失败:', error);
       if (isMountedRef.current) {
         setAllHistoryData([]);
         setDisplayedData([]);
+        setCurrentPage(1);
         setHasMoreData(false);
       }
     } finally {
       if (isMountedRef.current) {
-        setLoadingHistory(false);
+        // 延迟一点再设置loading为false，确保UI更新完成
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setLoadingHistory(false);
+          }
+        }, 100);
       }
     }
-  }, [loadingHistory, PAGE_SIZE]);
+  }, [loadingHistory, PAGE_SIZE, allHistoryData, f?.code]);
 
-  const loadMoreData = () => {
+  // 加载更多数据的函数
+  const loadMoreData = useCallback(() => {
     const nextPage = currentPage + 1;
     const startIndex = 0;
     const endIndex = nextPage * PAGE_SIZE;
@@ -154,19 +199,44 @@ export default function FundCard({
     setDisplayedData(newData);
     setCurrentPage(nextPage);
     setHasMoreData(allHistoryData.length > newData.length);
-  };
+  }, [currentPage, PAGE_SIZE, allHistoryData]);
 
-  // 关键修改4：优化useEffect，防止无限重渲染
+  // 优化：防抖的时间范围切换处理
+  const handleRangeChange = useCallback((key) => {
+    if (loadingHistory) return;
+    if (key === historyRange) return;
+    
+    // 清除之前的定时器
+    if (loadHistoryTimerRef.current) {
+      clearTimeout(loadHistoryTimerRef.current);
+    }
+    
+    // 立即更新UI状态
+    setHistoryRange(key);
+    setAllHistoryData([]);
+    setDisplayedData([]);
+    setCurrentPage(1);
+    
+    // 设置防抖延迟，避免频繁切换导致的多次请求
+    loadHistoryTimerRef.current = setTimeout(() => {
+      hasFetchedRef.current = false;
+    }, 300);
+  }, [historyRange, loadingHistory]);
+
+  // 主数据获取效果
   useEffect(() => {
     isMountedRef.current = true;
     
     return () => {
       isMountedRef.current = false;
+      if (loadHistoryTimerRef.current) {
+        clearTimeout(loadHistoryTimerRef.current);
+      }
     };
   }, []);
 
   useEffect(() => {
-    // 只有当展开历史净值、基金代码和时间范围变化时才获取数据
+    // 只有当展开历史净值、基金代码变化、或时间范围变化时才获取数据
     if (!showHistory || !f?.code) return;
     
     // 重置请求标记
@@ -175,18 +245,15 @@ export default function FundCard({
     loadHistoryData(f.code, historyRange);
     
     return () => {
-      // 清理函数：取消进行中的请求
+      // 清理函数
       hasFetchedRef.current = true;
     };
   }, [f?.code, historyRange, showHistory, loadHistoryData]);
 
   // 当切换时间范围时重置数据
   useEffect(() => {
-    if (showHistory && f?.code) {
+    if (showHistory && f?.code && historyRange !== prevRangeRef.current) {
       hasFetchedRef.current = false;
-      setAllHistoryData([]);
-      setDisplayedData([]);
-      setCurrentPage(1);
     }
   }, [historyRange, showHistory, f?.code]);
 
@@ -207,6 +274,7 @@ export default function FundCard({
         ...style,
       }}
     >
+      {/* 基金头部信息 - 保持不变 */}
       <div className="row" style={{ marginBottom: 10 }}>
         <div className="title">
           {currentTab !== 'all' && currentTab !== 'fav' ? (
@@ -276,6 +344,7 @@ export default function FundCard({
         </div>
       </div>
 
+      {/* 基金概览信息 - 保持不变 */}
       <div className="row" style={{ marginBottom: 12 }}>
         <Stat label="单位净值" value={f.dwjz ?? '—'} />
         {f.noValuation ? (
@@ -343,6 +412,7 @@ export default function FundCard({
         )}
       </div>
 
+      {/* 持仓和收益信息 - 保持不变 */}
       <div className="row" style={{ marginBottom: 12 }}>
         {!profit ? (
           <div
@@ -456,6 +526,7 @@ export default function FundCard({
         </div>
       )}
 
+      {/* 实时估值图表 - 保持不变 */}
       {(() => {
         const showIntraday =
           Array.isArray(valuationSeries?.[f.code]) && valuationSeries[f.code].length >= 2;
@@ -486,6 +557,7 @@ export default function FundCard({
         );
       })()}
 
+      {/* 前10重仓股票 - 保持不变 */}
       {hasHoldings && (
         <>
           <div
@@ -545,6 +617,7 @@ export default function FundCard({
         </>
       )}
 
+      {/* 业绩走势图 - 保持不变 */}
       <div style={{ marginTop: '16px', marginBottom: '16px' }}>
         <FundTrendChart
           key={`${f.code}-${theme}`}
@@ -556,6 +629,7 @@ export default function FundCard({
         />
       </div>
 
+      {/* 历史净值部分 - 核心修复区域 */}
       <div
         style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none' }}
         className="title"
@@ -590,6 +664,7 @@ export default function FundCard({
             style={{ overflow: 'hidden' }}
           >
             <div className="space-y-3">
+              {/* 时间范围选择器 */}
               <div className="flex gap-1 sm:gap-2 flex-wrap overflow-x-auto py-1">
                 {timeRangeConfig.map(({ key, label }) => (
                   <button
@@ -599,10 +674,7 @@ export default function FundCard({
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                     }`}
-                    onClick={() => {
-                      setHistoryRange(key);
-                      hasFetchedRef.current = false; // 允许重新获取
-                    }}
+                    onClick={() => handleRangeChange(key)}
                     disabled={loadingHistory}
                   >
                     {label}
@@ -623,19 +695,8 @@ export default function FundCard({
                       </tr>
                     </thead>
                     <tbody>
-                      {displayedData.map((item, idx) => {
-                        const colorClass = getStatColorClass(item.change);
-                        return (
-                          <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
-                            <td className="p-3 whitespace-nowrap font-medium text-base">{item.date}</td>
-                            <td className="p-3 whitespace-nowrap font-medium text-base">{item.value.toFixed(4)}</td>
-                            {/* 关键修改5：直接使用接口返回的changeFormatted字段 */}
-                            <td className={`p-3 whitespace-nowrap font-medium text-base ${colorClass}`}>
-                              {item.changeFormatted}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {/* 使用缓存的表格行 */}
+                      {tableRows}
                     </tbody>
                   </table>
                   
