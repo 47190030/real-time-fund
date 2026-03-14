@@ -757,37 +757,106 @@ export const parseFundTextWithLLM = async (text) => {
   }
 };
 /**
- * 从 fundmobapi.eastmoney.com 获取包含日涨跌幅的基金历史净值 (JSONP版本)
- * 使用JSONP方式绕过CORS限制，与项目中其他接口调用方式保持一致
- * 此接口直接返回包含 JZZZL(日增长率) 字段的完整数据
+ * 方案一：通过多个RANGE参数获取更多历史数据
+ * 由于单次请求最多返回15条，尝试不同时间范围来获取更多数据
  */
-export const fetchFundHistoryFromMobAPI = async (code, range = '1y') => {
+export const fetchFundHistoryFromMobAPI = async (code, range = 'all') => {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return [];
   }
 
-  const rangeMap = {
-    '1m': 'y',  // 先用年范围，接口通常返回足够数据
-    '3m': 'y',
-    '6m': 'y', 
-    '1y': 'y',  // 确认可用
-    '3y': 'y3', // 可能需要实测确认
-    'all': 'y'  // 先用年
-  };
+  // 定义要尝试的RANGE参数列表
+  // 注意：需要实测哪些RANGE值有效，以下是常见值
+  const rangeConfigs = [
+    { key: 'y', label: '1年' },      // 1年
+    { key: 'y3', label: '3年' },     // 3年
+    { key: 'y5', label: '5年' },     // 5年
+    { key: 'max', label: '最大' },   // 最大历史
+    { key: 'all', label: '全部' },   // 全部
+    { key: 'm6', label: '6个月' },   // 6个月
+    { key: 'q', label: '季度' },     // 季度
+  ];
   
-  const apiRange = rangeMap[range] || 'y';
+  const allData = [];
+  const processedDates = new Set(); // 用于日期去重
+  const errors = []; // 记录错误信息
 
+  console.log(`开始获取基金 ${code} 的历史净值数据，尝试多个时间范围...`);
+
+  // 顺序尝试不同的RANGE参数
+  for (const config of rangeConfigs) {
+    try {
+      console.log(`尝试获取: ${config.label} (RANGE=${config.key})`);
+      
+      const pageData = await fetchHistoryByRange(code, config.key);
+      
+      if (!pageData || pageData.length === 0) {
+        console.log(`RANGE=${config.key} 未返回数据，尝试下一个`);
+        continue;
+      }
+      
+      console.log(`RANGE=${config.key} 返回 ${pageData.length} 条数据`);
+      
+      // 去重并合并数据
+      let newCount = 0;
+      for (const item of pageData) {
+        if (!processedDates.has(item.date)) {
+          processedDates.add(item.date);
+          allData.push(item);
+          newCount++;
+        }
+      }
+      
+      console.log(`新增 ${newCount} 条不重复数据，累计 ${allData.length} 条`);
+      
+      // 如果累计数据量较大，可以提前结束
+      if (allData.length >= 100) {
+        console.log(`已达到目标数据量(${allData.length}条)，停止继续获取`);
+        break;
+      }
+      
+      // 添加延迟，避免请求过于频繁
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+    } catch (error) {
+      const errorMsg = `RANGE=${config.key} 请求失败: ${error.message}`;
+      console.warn(errorMsg);
+      errors.push(errorMsg);
+      
+      // 继续尝试下一个RANGE
+      continue;
+    }
+  }
+  
+  // 输出统计信息
+  console.log(`基金 ${code} 数据获取完成:`);
+  console.log(`- 成功获取 ${allData.length} 条历史净值`);
+  console.log(`- 尝试了 ${rangeConfigs.length} 个时间范围`);
+  console.log(`- 遇到 ${errors.length} 个错误`);
+  
+  if (errors.length > 0) {
+    console.warn('错误详情:', errors);
+  }
+  
+  // 按日期倒序排列
+  const sortedData = allData.sort((a, b) => new Date(b.date) - new Date(a.date));
+  
+  return sortedData;
+};
+
+/**
+ * 获取单个RANGE的历史数据
+ */
+const fetchHistoryByRange = (code, rangeKey) => {
   return new Promise((resolve) => {
-    // 生成唯一的回调函数名
-    const callbackName = `jsonpFundHistory_${Date.now()}_${Math.random().toString(36).substr(2)}`;
+    const callbackName = `jsonpFundHistory_${Date.now()}_${rangeKey}_${Math.random().toString(36).substr(2)}`;
     
-    // 构造JSONP请求URL
-    const url = `https://fundmobapi.eastmoney.com/FundMApi/FundNetDiagram.ashx?FCODE=${code}&RANGE=${apiRange}&deviceid=Wap&plat=Wap&product=EFund&version=2.0.0&callback=${callbackName}&_=${Date.now()}`;
+    // 构造请求URL - 使用单个RANGE参数
+    const url = `https://fundmobapi.eastmoney.com/FundMApi/FundNetDiagram.ashx?FCODE=${code}&RANGE=${rangeKey}&deviceid=Wap&plat=Wap&product=EFund&version=2.0.0&callback=${callbackName}&_=${Date.now()}`;
     
     let timeoutId = null;
-    const TIMEOUT_MS = 10000; // 10秒超时
+    const TIMEOUT_MS = 10000;
     
-    // 清理函数
     const cleanup = () => {
       if (timeoutId) {
         clearTimeout(timeoutId);
@@ -801,28 +870,25 @@ export const fetchFundHistoryFromMobAPI = async (code, range = '1y') => {
       }
     };
     
-    // 设置超时
     timeoutId = setTimeout(() => {
       cleanup();
-      console.warn(`基金 ${code} 历史净值请求超时`);
+      console.warn(`RANGE=${rangeKey} 请求超时`);
       resolve([]);
     }, TIMEOUT_MS);
     
-    // 定义全局回调函数
     window[callbackName] = (response) => {
       cleanup();
       
       if (response && response.ErrCode === 0 && Array.isArray(response.Datas)) {
-        const historyData = [];
+        const pageData = [];
         
         for (const item of response.Datas) {
-          const dateStr = item.FSRQ; // 净值日期
-          const value = parseFloat(item.DWJZ); // 单位净值
+          const dateStr = item.FSRQ;
+          const value = parseFloat(item.DWJZ);
           
           let change = null;
           let changeFormatted = '--';
           
-          // 解析日涨跌幅 (关键字段)
           if (item.JZZZL !== undefined && item.JZZZL !== null && String(item.JZZZL).trim() !== '') {
             change = parseFloat(item.JZZZL);
             if (!isNaN(change)) {
@@ -831,37 +897,35 @@ export const fetchFundHistoryFromMobAPI = async (code, range = '1y') => {
           }
           
           if (!isNaN(value)) {
-            historyData.push({
+            pageData.push({
               date: dateStr,
               value,
-              change,          // 涨跌幅数值，用于颜色判断
-              changeFormatted, // 格式化涨跌幅，用于直接显示
-              totalValue: parseFloat(item.LJJZ) || null, // 累计净值
+              change,
+              changeFormatted,
+              totalValue: parseFloat(item.LJJZ) || null,
+              sourceRange: rangeKey, // 记录数据来源，便于调试
             });
           }
         }
         
-        // 按日期倒序排列
-        resolve(historyData.sort((a, b) => new Date(b.date) - new Date(a.date)));
+        resolve(pageData);
       } else {
-        console.warn(`基金 ${code} 历史净值接口返回异常:`, response?.ErrMsg || '无数据');
+        // 接口返回错误
+        const errMsg = response?.ErrMsg || '未知错误';
+        console.warn(`RANGE=${rangeKey} 接口返回错误: ${errMsg} (ErrCode: ${response?.ErrCode})`);
         resolve([]);
       }
     };
     
-    // 创建script标签发起JSONP请求
     const script = document.createElement('script');
     script.src = url;
     
     script.onerror = () => {
       cleanup();
-      console.error(`基金 ${code} 历史净值请求失败`);
+      console.error(`RANGE=${rangeKey} 请求失败`);
       resolve([]);
     };
     
-    // 添加到文档中发起请求
     document.head.appendChild(script);
   });
 };
-
-
