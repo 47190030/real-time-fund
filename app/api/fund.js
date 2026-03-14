@@ -757,175 +757,81 @@ export const parseFundTextWithLLM = async (text) => {
   }
 };
 /**
- * 方案一：通过多个RANGE参数获取更多历史数据
- * 由于单次请求最多返回15条，尝试不同时间范围来获取更多数据
+ * 获取基金历史净值（分页版本）
+ * @param {string} code 基金代码
+ * @param {string} range 时间范围 (如 '1y')
+ * @param {number} page 请求的页码，从1开始
+ * @param {number} per 每页条数，建议20
+ * @returns {Promise<{data: Array, currentPage: number, totalPages: number, hasMore: boolean}>}
  */
-export const fetchFundHistoryFromMobAPI = async (code, range = 'all') => {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return [];
+export const fetchFundHistoryFromMobAPI = async (code, range = 'all', page = 1, per = 20) => {
+  if (typeof window === 'undefined') {
+    return { data: [], currentPage: 1, totalPages: 1, hasMore: false };
   }
 
-  // 定义要尝试的RANGE参数列表
-  // 注意：需要实测哪些RANGE值有效，以下是常见值
-  const rangeConfigs = [
-    { key: 'y', label: '1年' },      // 1年
-    { key: 'y3', label: '3年' },     // 3年
-    { key: 'y5', label: '5年' },     // 5年
-    { key: 'max', label: '最大' },   // 最大历史
-    { key: 'all', label: '全部' },   // 全部
-    { key: 'm6', label: '6个月' },   // 6个月
-    { key: 'q', label: '季度' },     // 季度
-  ];
-  
-  const allData = [];
-  const processedDates = new Set(); // 用于日期去重
-  const errors = []; // 记录错误信息
+  // 计算查询的起止日期（根据range参数）
+  const end = new Date();
+  const start = new Date();
+  const rangeMap = { '1m': 30, '3m': 90, '6m': 180, '1y': 365, '3y': 1095, 'all': 3650 };
+  const days = rangeMap[range] || 365;
+  start.setDate(start.getDate() - days);
 
-  console.log(`开始获取基金 ${code} 的历史净值数据，尝试多个时间范围...`);
+  const formatDate = (d) => d.toISOString().split('T')[0];
+  const sdate = formatDate(start);
+  const edate = formatDate(end);
 
-  // 顺序尝试不同的RANGE参数
-  for (const config of rangeConfigs) {
-    try {
-      console.log(`尝试获取: ${config.label} (RANGE=${config.key})`);
-      
-      const pageData = await fetchHistoryByRange(code, config.key);
-      
-      if (!pageData || pageData.length === 0) {
-        console.log(`RANGE=${config.key} 未返回数据，尝试下一个`);
-        continue;
-      }
-      
-      console.log(`RANGE=${config.key} 返回 ${pageData.length} 条数据`);
-      
-      // 去重并合并数据
-      let newCount = 0;
-      for (const item of pageData) {
-        if (!processedDates.has(item.date)) {
-          processedDates.add(item.date);
-          allData.push(item);
-          newCount++;
-        }
-      }
-      
-      console.log(`新增 ${newCount} 条不重复数据，累计 ${allData.length} 条`);
-      
-      // 如果累计数据量较大，可以提前结束
-      if (allData.length >= 100) {
-        console.log(`已达到目标数据量(${allData.length}条)，停止继续获取`);
-        break;
-      }
-      
-      // 添加延迟，避免请求过于频繁
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-    } catch (error) {
-      const errorMsg = `RANGE=${config.key} 请求失败: ${error.message}`;
-      console.warn(errorMsg);
-      errors.push(errorMsg);
-      
-      // 继续尝试下一个RANGE
-      continue;
+  const url = `https://fundf10.eastmoney.com/F10DataApi.aspx?type=lsjz&code=${code}&page=${page}&per=${per}&sdate=${sdate}&edate=${edate}`;
+
+  try {
+    // 注意：此接口返回的是JSONP格式，但您提供的响应是JS变量赋值。
+    // 我们需要通过您的 loadScript 函数或直接fetch来获取，并解析返回的 apidata 对象。
+    const apidata = await loadScript(url); // 使用您项目中已有的 loadScript 函数
+
+    if (!apidata || !apidata.content) {
+      throw new Error('接口返回数据异常');
     }
+
+    // 解析HTML表格，获取当前页的数据列表
+    const currentPageData = parseHistoryFromHTML(apidata.content);
+
+    return {
+      data: currentPageData,
+      currentPage: apidata.curpage || page,
+      totalPages: apidata.pages || 1,
+      totalRecords: apidata.records || 0,
+      hasMore: (apidata.curpage || page) < (apidata.pages || 1) // 是否还有下一页
+    };
+
+  } catch (error) {
+    console.error(`[API] 获取基金 ${code} 第 ${page} 页历史净值失败:`, error);
+    return { data: [], currentPage: page, totalPages: 1, hasMore: false };
   }
-  
-  // 输出统计信息
-  console.log(`基金 ${code} 数据获取完成:`);
-  console.log(`- 成功获取 ${allData.length} 条历史净值`);
-  console.log(`- 尝试了 ${rangeConfigs.length} 个时间范围`);
-  console.log(`- 遇到 ${errors.length} 个错误`);
-  
-  if (errors.length > 0) {
-    console.warn('错误详情:', errors);
-  }
-  
-  // 按日期倒序排列
-  const sortedData = allData.sort((a, b) => new Date(b.date) - new Date(a.date));
-  
-  return sortedData;
 };
 
-/**
- * 获取单个RANGE的历史数据
- */
-const fetchHistoryByRange = (code, rangeKey) => {
-  return new Promise((resolve) => {
-    const callbackName = `jsonpFundHistory_${Date.now()}_${rangeKey}_${Math.random().toString(36).substr(2)}`;
-    
-    // 构造请求URL - 使用单个RANGE参数
-    const url = `https://fundmobapi.eastmoney.com/FundMApi/FundNetDiagram.ashx?FCODE=${code}&RANGE=${rangeKey}&deviceid=Wap&plat=Wap&product=EFund&version=2.0.0&callback=${callbackName}&_=${Date.now()}`;
-    
-    let timeoutId = null;
-    const TIMEOUT_MS = 10000;
-    
-    const cleanup = () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
+// HTML解析函数 (复用或优化您之前的逻辑)
+const parseHistoryFromHTML = (html) => {
+  const rowMatches = html.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+  const historyData = [];
+  for (const row of rowMatches) {
+    const cells = row.match(/<td[^>]*>(.*?)<\/td>/gi) || [];
+    if (cells.length < 4) continue;
+    const getText = (td) => td.replace(/<[^>]+>/g, '').trim();
+    const dateStr = getText(cells[0]);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+    const value = parseFloat(getText(cells[1]));
+    if (isNaN(value)) continue;
+    let change = null;
+    let changeFormatted = '--';
+    for (let i = 0; i < cells.length; i++) {
+      const txt = getText(cells[i]);
+      const m = txt.match(/([-+]?\d+(?:\.\d+)?)%/);
+      if (m) {
+        change = parseFloat(m[1]);
+        changeFormatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+        break;
       }
-      if (window[callbackName]) {
-        delete window[callbackName];
-      }
-      if (script && script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-    };
-    
-    timeoutId = setTimeout(() => {
-      cleanup();
-      console.warn(`RANGE=${rangeKey} 请求超时`);
-      resolve([]);
-    }, TIMEOUT_MS);
-    
-    window[callbackName] = (response) => {
-      cleanup();
-      
-      if (response && response.ErrCode === 0 && Array.isArray(response.Datas)) {
-        const pageData = [];
-        
-        for (const item of response.Datas) {
-          const dateStr = item.FSRQ;
-          const value = parseFloat(item.DWJZ);
-          
-          let change = null;
-          let changeFormatted = '--';
-          
-          if (item.JZZZL !== undefined && item.JZZZL !== null && String(item.JZZZL).trim() !== '') {
-            change = parseFloat(item.JZZZL);
-            if (!isNaN(change)) {
-              changeFormatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
-            }
-          }
-          
-          if (!isNaN(value)) {
-            pageData.push({
-              date: dateStr,
-              value,
-              change,
-              changeFormatted,
-              totalValue: parseFloat(item.LJJZ) || null,
-              sourceRange: rangeKey, // 记录数据来源，便于调试
-            });
-          }
-        }
-        
-        resolve(pageData);
-      } else {
-        // 接口返回错误
-        const errMsg = response?.ErrMsg || '未知错误';
-        console.warn(`RANGE=${rangeKey} 接口返回错误: ${errMsg} (ErrCode: ${response?.ErrCode})`);
-        resolve([]);
-      }
-    };
-    
-    const script = document.createElement('script');
-    script.src = url;
-    
-    script.onerror = () => {
-      cleanup();
-      console.error(`RANGE=${rangeKey} 请求失败`);
-      resolve([]);
-    };
-    
-    document.head.appendChild(script);
-  });
+    }
+    historyData.push({ date: dateStr, value, change, changeFormatted });
+  }
+  return historyData;
 };
