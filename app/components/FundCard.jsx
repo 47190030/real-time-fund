@@ -36,6 +36,7 @@ const getBrowserTimeZone = () => {
 const TZ = getBrowserTimeZone();
 const toTz = (input) => (input ? dayjs.tz(input, TZ) : dayjs().tz(TZ));
 
+// 日期格式化函数
 const formatDisplayDate = (value) => {
   if (!value) return '-';
 
@@ -47,9 +48,11 @@ const formatDisplayDate = (value) => {
   return hasTime ? d.format('MM-DD HH:mm') : d.format('MM-DD');
 };
 
-
 // Stat 组件的颜色判断逻辑
 const getStatColorClass = (delta) => {
+  if (delta === null || delta === undefined) {
+    return '';
+  }
   if (delta > 0) return 'up';
   if (delta < 0) return 'down';
   return '';
@@ -105,38 +108,42 @@ export default function FundCard({
     { key: 'all', label: '全部' }
   ];
 
-  const calculateDailyChange = (current, previous) => {
-    if (!previous || previous.value === 0 || current.value === previous.value) {
-      return { value: null, formatted: '--' };
-    }
-    
-    const change = ((current.value - previous.value) / previous.value) * 100;
-    const formatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
-    return { value: change, formatted };
-  };
-
   const loadHistoryData = useCallback(async (code, range) => {
     if (!code || loadingHistory) return;
     setLoadingHistory(true);
     try {
       const data = await fetchFundHistory(code, range);
       
+      // 对数据进行倒序排列，确保最新日期在前面
       const sortedData = [...(data || [])].sort((a, b) => {
         return new Date(b.date) - new Date(a.date);
       });
 
-      const dataWithChange = sortedData.map((item, index) => {
-        const prevItem = sortedData[index + 1];
-        const change = calculateDailyChange(item, prevItem);
+      // 直接从API数据中获取涨跌幅
+      const dataWithChange = sortedData.map((item) => {
+        // 假设API返回的item中包含change字段（涨跌幅百分比数值）
+        const change = item.change;
+        
+        // 格式化涨跌幅
+        let changeFormatted = '--';
+        if (change !== null && change !== undefined) {
+          // 如果change是字符串，尝试转换为数字
+          const changeValue = typeof change === 'string' ? parseFloat(change) : change;
+          if (!isNaN(changeValue)) {
+            changeFormatted = `${changeValue > 0 ? '+' : ''}${changeValue.toFixed(2)}%`;
+          }
+        }
+        
         return {
           ...item,
-          change: change.value,
-          changeFormatted: change.formatted
+          change: change, // 保留原始的change值
+          changeFormatted
         };
       });
 
       setAllHistoryData(dataWithChange);
       
+      // 初始化显示第一页数据（5条）
       setCurrentPage(1);
       setDisplayedData(dataWithChange.slice(0, PAGE_SIZE));
       setHasMoreData(dataWithChange.length > PAGE_SIZE);
@@ -228,7 +235,7 @@ export default function FundCard({
         <div className="actions">
           <div className="badge-v">
             <span>{f.noValuation ? '净值日期' : '估值时间'}</span>
-                 <strong>
+            <strong>
               {f.noValuation
                 ? formatDisplayDate(f.jzrq)
                 : formatDisplayDate(f.gztime || f.time)}
@@ -604,9 +611,7 @@ export default function FundCard({
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.date}</td>
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.value.toFixed(4)}</td>
                             <td className={`p-3 whitespace-nowrap font-medium text-base ${colorClass}`}>
-                              {item.change !== null && item.change !== undefined
-                                ? `${item.change > 0 ? '+' : ''}${item.change.toFixed(2)}%`
-                                : '--'}
+                              {item.changeFormatted}
                             </td>
                           </tr>
                         );
