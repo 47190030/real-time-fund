@@ -114,36 +114,47 @@ export default function FundCard({
     try {
       const data = await fetchFundHistory(code, range);
       
+      if (!data || data.length === 0) {
+        setAllHistoryData([]);
+        setDisplayedData([]);
+        setHasMoreData(false);
+        return;
+      }
+      
       // 对数据进行倒序排列，确保最新日期在前面
-      const sortedData = [...(data || [])].sort((a, b) => {
-        return new Date(b.date) - new Date(a.date);
+      const sortedData = [...data].sort((a, b) => {
+        return new Date(b.FSRQ) - new Date(a.FSRQ);
       });
 
-      // 直接从API数据中获取涨跌幅
+      // 处理数据格式，使用API返回的字段
       const dataWithChange = sortedData.map((item) => {
-        // 假设API返回的item中包含change字段（涨跌幅百分比数值）
-        const change = item.change;
-        
-        // 格式化涨跌幅
+        // 解析涨跌幅
+        let change = null;
         let changeFormatted = '--';
-        if (change !== null && change !== undefined) {
-          // 如果change是字符串，尝试转换为数字
-          const changeValue = typeof change === 'string' ? parseFloat(change) : change;
+        
+        if (item.JZZZL !== undefined && item.JZZZL !== null && item.JZZZL !== '--') {
+          // 将字符串转换为数字
+          const changeValue = parseFloat(item.JZZZL);
           if (!isNaN(changeValue)) {
+            change = changeValue;
             changeFormatted = `${changeValue > 0 ? '+' : ''}${changeValue.toFixed(2)}%`;
           }
         }
         
         return {
-          ...item,
-          change: change, // 保留原始的change值
-          changeFormatted
+          date: item.FSRQ, // 日期
+          value: parseFloat(item.DWJZ) || 0, // 单位净值
+          change: change, // 涨跌幅数值
+          changeFormatted: changeFormatted, // 格式化后的涨跌幅字符串
+          ljjz: parseFloat(item.LJJZ) || 0, // 累计净值
+          navType: item.NAVTYPE, // 净值类型
+          originalData: item // 保留原始数据
         };
       });
 
-      setAllHistoryData(dataWithChange);
+      console.log('处理后的历史数据:', dataWithChange); // 调试用
       
-      // 初始化显示第一页数据（5条）
+      setAllHistoryData(dataWithChange);
       setCurrentPage(1);
       setDisplayedData(dataWithChange.slice(0, PAGE_SIZE));
       setHasMoreData(dataWithChange.length > PAGE_SIZE);
