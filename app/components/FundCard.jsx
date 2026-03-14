@@ -35,17 +35,13 @@ const getBrowserTimeZone = () => {
 };
 const TZ = getBrowserTimeZone();
 const toTz = (input) => (input ? dayjs.tz(input, TZ) : dayjs().tz(TZ));
-const formatDisplayDate = (value) => {
-  if (!value) return '-';
 
-  const d = toTz(value);
-  if (!d.isValid()) return value;
-
-  const hasTime = /[T\s]\d{2}:\d{2}/.test(String(value));
-
-  return hasTime ? d.format('MM-DD HH:mm') : d.format('MM-DD');
+// Stat 组件的颜色判断逻辑
+const getStatColorClass = (delta) => {
+  if (delta > 0) return 'up';
+  if (delta < 0) return 'down';
+  return '';
 };
-
 
 export default function FundCard({
   fund: f,
@@ -103,7 +99,7 @@ export default function FundCard({
     }
     
     const change = ((current.value - previous.value) / previous.value) * 100;
-    const formatted = `${change > 0 ? '+' : ''}${Math.abs(change).toFixed(2)}%`;
+    const formatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
     return { value: change, formatted };
   };
 
@@ -220,7 +216,7 @@ export default function FundCard({
         <div className="actions">
           <div className="badge-v">
             <span>{f.noValuation ? '净值日期' : '估值时间'}</span>
-            <strong>{f.noValuation ? (f.jzrq) : (f.gztime || f.time)}</strong>
+            <strong>{f.noValuation ? (f.jzrq || '-') : (f.gztime || f.time || '-')}</strong>
           </div>
           <div className="row" style={{ gap: 4 }}>
             <button
@@ -586,24 +582,14 @@ export default function FundCard({
                     </thead>
                     <tbody>
                       {displayedData.map((item, idx) => {
-                        const getChangeColor = () => {
-                          if (item.change === null || item.change === undefined) {
-                            return 'text-muted-foreground';
-                          }
-                          return item.change > 0 
-                            ? 'text-red-400 dark:text-red-300'
-                            : item.change < 0 
-                              ? 'text-green-400 dark:text-green-300'
-                              : 'text-muted-foreground';
-                        };
-
+                        const colorClass = getStatColorClass(item.change);
                         return (
                           <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.date}</td>
                             <td className="p-3 whitespace-nowrap font-medium text-base">{item.value.toFixed(4)}</td>
-                            <td className={`p-3 whitespace-nowrap font-medium text-base ${getChangeColor()}`}>
+                            <td className={`p-3 whitespace-nowrap font-medium text-base ${colorClass}`}>
                               {item.change !== null && item.change !== undefined
-                                ? `${item.change > 0 ? '+' : ''}${Math.abs(item.change).toFixed(2)}%`
+                                ? `${item.change > 0 ? '+' : ''}${item.change.toFixed(2)}%`
                                 : '--'}
                             </td>
                           </tr>
