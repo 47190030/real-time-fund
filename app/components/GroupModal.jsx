@@ -20,7 +20,6 @@ export default function GroupModal({ onClose, onConfirm }) {
       <DialogContent
         overlayClassName="modal-overlay z-[9999]"
         className={cn('!p-0 z-[10000] max-w-[280px] sm:max-w-[280px]')}
-        showCloseButton={false}
       >
         <div className="glass card modal !max-w-[280px] !w-full">
           <div className="flex items-center justify-between mb-5">
@@ -30,16 +29,6 @@ export default function GroupModal({ onClose, onConfirm }) {
                 <span className="text-base font-semibold text-[var(--foreground)]">新增分组</span>
               </DialogTitle>
             </div>
-            <DialogClose asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors duration-200 cursor-pointer"
-                aria-label="关闭"
-              >
-                <CloseIcon className="w-5 h-5" />
-              </Button>
-            </DialogClose>
           </div>
 
           <Field className="mb-5">

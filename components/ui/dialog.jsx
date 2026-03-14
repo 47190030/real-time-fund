@@ -6,11 +6,38 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import {CloseIcon} from "@/app/components/Icons";
+import { useBodyScrollLock } from "../../app/hooks/useBodyScrollLock";
 
 function Dialog({
+  open: openProp,
+  defaultOpen,
+  onOpenChange,
   ...props
 }) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false);
+  const isControlled = openProp !== undefined;
+  const currentOpen = isControlled ? openProp : uncontrolledOpen;
+
+  // 使用全局 hook 统一处理 body 滚动锁定 & 恢复，避免弹窗打开时页面跳到顶部
+  useBodyScrollLock(currentOpen);
+
+  const handleOpenChange = React.useCallback(
+    (next) => {
+      if (!isControlled) setUncontrolledOpen(next);
+      onOpenChange?.(next);
+    },
+    [isControlled, onOpenChange]
+  );
+
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      open={isControlled ? openProp : undefined}
+      defaultOpen={defaultOpen}
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  );
 }
 
 function DialogTrigger({

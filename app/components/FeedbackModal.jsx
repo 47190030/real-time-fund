@@ -23,7 +23,7 @@ export default function FeedbackModal({ onClose, user, onOpenWeChat }) {
 
     // Web3Forms Access Key
     formData.append("access_key", process.env.NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY || '');
-    formData.append("subject", "养基乐 - 用户反馈");
+    formData.append("subject", "基估宝 - 用户反馈");
 
     try {
       const data = await submitFeedback(formData);
@@ -114,6 +114,32 @@ export default function FeedbackModal({ onClose, user, onOpenWeChat }) {
             <button className="button" type="submit" disabled={submitting} style={{ width: '100%' }}>
               {submitting ? '发送中...' : '提交反馈'}
             </button>
+
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', textAlign: 'center' }}>
+              <p className="muted" style={{ fontSize: '12px', lineHeight: '1.6' }}>
+                如果您有 Github 账号，也可以在本项目
+                <a
+                  href="https://github.com/hzm0321/real-time-fund/issues"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="link-button"
+                  style={{ color: 'var(--primary)', textDecoration: 'underline', padding: '0 4px', fontWeight: 600 }}
+                >
+                  Issues
+                </a>
+                区留言互动
+              </p>
+              <p className="muted" style={{ fontSize: '12px', lineHeight: '1.6' }}>
+                或加入我们的
+                <a
+                  className="link-button"
+                  style={{ color: 'var(--primary)', textDecoration: 'underline', padding: '0 4px', fontWeight: 600, cursor: 'pointer' }}
+                  onClick={onOpenWeChat}
+                >
+                  微信用户交流群
+                </a>
+              </p>
+            </div>
           </form>
         )}
       </motion.div>

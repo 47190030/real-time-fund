@@ -4,6 +4,27 @@ import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
 
 import { cn } from "@/lib/utils"
+import { useBodyScrollLock } from "../../app/hooks/useBodyScrollLock"
+
+const DrawerScrollLockContext = React.createContext(null)
+
+/**
+ * 移动端滚动锁定：仅将 body 设为 position:fixed，用负值 top 把页面“拉”回当前视口位置，
+ * 既锁定滚动又保留视觉位置；overlay 上 ontouchmove preventDefault 防止背景触摸滚动。
+ */
+function useScrollLock(open) {
+  const onOverlayTouchMove = React.useCallback((e) => {
+    e.preventDefault()
+  }, [])
+
+  // 统一使用 app 级 hook 处理 body 滚动锁定 & 恢复，避免多处实现导致位移/跳顶问题
+  useBodyScrollLock(open)
+
+  return React.useMemo(
+    () => (open ? { onTouchMove: onOverlayTouchMove } : null),
+    [open, onOverlayTouchMove]
+  )
+}
 
 function parseVhToPx(vhStr) {
   if (typeof vhStr === "number") return vhStr
@@ -12,10 +33,17 @@ function parseVhToPx(vhStr) {
   return (window.innerHeight * Number(match[1])) / 100
 }
 
-function Drawer({
-  ...props
-}) {
-  return <DrawerPrimitive.Root data-slot="drawer" {...props} />;
+function Drawer({ open, ...props }) {
+  const scrollLock = useScrollLock(open)
+  const contextValue = React.useMemo(
+    () => ({ ...scrollLock, open: !!open }),
+    [scrollLock, open]
+  )
+  return (
+    <DrawerScrollLockContext.Provider value={contextValue}>
+      <DrawerPrimitive.Root modal={false} data-slot="drawer" open={open} {...props} />
+    </DrawerScrollLockContext.Provider>
+  )
 }
 
 function DrawerTrigger({
@@ -40,14 +68,26 @@ function DrawerOverlay({
   className,
   ...props
 }) {
+  const ctx = React.useContext(DrawerScrollLockContext)
+  const { open = false, ...scrollLockProps } = ctx || {}
+  // modal={false} 时 vaul 不渲染/隐藏 Overlay，用自定义遮罩 div 保证始终有遮罩；点击遮罩关闭
   return (
-    <DrawerPrimitive.Overlay
-      data-slot="drawer-overlay"
-      className={cn(
-        "fixed inset-0 z-50 bg-[var(--drawer-overlay)] backdrop-blur-[4px] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
-        className
-      )}
-      {...props} />
+    <DrawerPrimitive.Close asChild>
+      <div
+        data-slot="drawer-overlay"
+        data-state={open ? "open" : "closed"}
+        role="button"
+        tabIndex={-1}
+        aria-label="关闭"
+        className={cn(
+          "fixed inset-0 z-50 cursor-default bg-[var(--drawer-overlay,rgba(0,0,0,0.45))] backdrop-blur-[6px]",
+          "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+          className
+        )}
+        {...scrollLockProps}
+        {...props}
+      />
+    </DrawerPrimitive.Close>
   );
 }
 
