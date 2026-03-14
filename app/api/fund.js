@@ -757,87 +757,103 @@ export const parseFundTextWithLLM = async (text) => {
   }
 };
 /**
- * 从 fundmobapi.eastmoney.com 获取包含日涨跌幅的基金历史净值
- * 数据源：https://fundmobapi.eastmoney.com/FundMApi/FundNetDiagram.ashx
- * 此接口直接返回 JSON 数据，包含 FSRQ(日期), DWJZ(单位净值), JZZZL(日增长率) 等字段
- * @param {string} code 基金代码
- * @param {string} range 时间范围：'1m', '3m', '6m', '1y', '3y', 'all'
- * @returns {Promise<Array>} 返回包含 {date, value, change, changeFormatted} 的对象数组，按日期倒序排列
+ * 从 fundmobapi.eastmoney.com 获取包含日涨跌幅的基金历史净值 (JSONP版本)
+ * 使用JSONP方式绕过CORS限制，与项目中其他接口调用方式保持一致
  */
 export const fetchFundHistoryFromMobAPI = async (code, range = '1y') => {
   if (typeof window === 'undefined') return [];
 
-  // 将前端约定的 range 参数映射到接口的 RANGE 参数
-  // 注：根据链接1的响应，接口的 `RANGE` 参数支持 'y'。其他范围可能需要实测调整。
   const rangeMap = {
-    '1m': 'y',  // 先用年范围，通常接口会返回足够多的数据
+    '1m': 'y',
     '3m': 'y',
     '6m': 'y',
-    '1y': 'y',  // 确认可用
-    '3y': 'y3', // 可能需要实测确认参数值
-    'all': 'y'  // 先用年
+    '1y': 'y',
+    '3y': 'y3',
+    'all': 'y'
   };
+  
   const apiRange = rangeMap[range] || 'y';
 
-  try {
-    // 构造请求URL，使用您提供的链接1中的接口格式
-    const url = `https://fundmobapi.eastmoney.com/FundMApi/FundNetDiagram.ashx?FCODE=${code}&RANGE=${apiRange}&deviceid=Wap&plat=Wap&product=EFund&version=2.0.0&_=${Date.now()}`;
+  return new Promise((resolve) => {
+    // 生成唯一的回调函数名
+    const callbackName = `jsonpFundHistory_${Date.now()}_${Math.random().toString(36).substr(2)}`;
     
-    const response = await fetch(url, {
-      headers: {
-        'Referer': 'https://fundmob.eastmoney.com/', // 重要：避免跨域或风控问题
-        'Accept': 'application/json',
+    // 构造 JSONP 请求的 URL
+    const url = `https://fundmobapi.eastmoney.com/FundMApi/FundNetDiagram.ashx?FCODE=${code}&RANGE=${apiRange}&deviceid=Wap&plat=Wap&product=EFund&version=2.0.0&callback=${callbackName}&_=${Date.now()}`;
+    
+    // 定义全局回调函数
+    window[callbackName] = (response) => {
+      // 清理：移除script标签和全局回调函数
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
       }
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-
-    // 检查接口返回状态码和数据
-    if (result.ErrCode !== 0 || !Array.isArray(result.Datas)) {
-      console.warn(`基金 ${code} 历史净值接口返回异常:`, result.ErrMsg);
-      return [];
-    }
-
-    const historyData = [];
-
-    for (const item of result.Datas) {
-      const dateStr = item.FSRQ; // 净值日期，如 "2026-03-13"
-      const value = parseFloat(item.DWJZ); // 单位净值，如 3.5517
+      delete window[callbackName];
       
-      // 解析日涨跌幅 (JZZZL) - 这是解决问题的关键字段
-      let change = null;
-      let changeFormatted = '--';
+      if (timeoutId) clearTimeout(timeoutId);
       
-      if (item.JZZZL !== undefined && item.JZZZL !== null && String(item.JZZZL).trim() !== '') {
-        change = parseFloat(item.JZZZL); // 涨跌幅数值，如 -1.28
-        if (!isNaN(change)) {
-          // 格式化为前端表格直接可用的字符串，如 "-1.28%"
-          changeFormatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+      // 处理响应数据
+      if (response && response.ErrCode === 0 && Array.isArray(response.Datas)) {
+        const historyData = [];
+        
+        for (const item of response.Datas) {
+          const dateStr = item.FSRQ;
+          const value = parseFloat(item.DWJZ);
+          
+          let change = null;
+          let changeFormatted = '--';
+          
+          if (item.JZZZL !== undefined && item.JZZZL !== null && String(item.JZZZL).trim() !== '') {
+            change = parseFloat(item.JZZZL);
+            if (!isNaN(change)) {
+              changeFormatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+            }
+          }
+          
+          if (!isNaN(value)) {
+            historyData.push({
+              date: dateStr,
+              value,
+              change,
+              changeFormatted,
+              totalValue: parseFloat(item.LJJZ) || null,
+            });
+          }
         }
+        
+        // 按日期倒序排列
+        resolve(historyData.sort((a, b) => new Date(b.date) - new Date(a.date)));
+      } else {
+        console.warn(`基金 ${code} 历史净值接口返回异常:`, response?.ErrMsg);
+        resolve([]);
       }
-
-      // 只添加有有效单位净值的数据
-      if (!isNaN(value)) {
-        historyData.push({
-          date: dateStr,           // 日期
-          value,                   // 单位净值
-          change,                  // 涨跌幅数值（用于判断颜色）
-          changeFormatted,         // 格式化后的涨跌幅字符串（用于直接显示）
-          // 可选的其他字段
-          totalValue: parseFloat(item.LJJZ) || null, // 累计净值
-        });
-      }
-    }
-
-    // 按日期倒序排列（最新的日期在最前面），确保与表格显示顺序一致
-    return historyData.sort((a, b) => new Date(b.date) - new Date(a.date));
+    };
     
-  } catch (error) {
-    console.error(`通过MobAPI获取基金 ${code} 历史净值失败:`, error);
-    return []; // 出错时返回空数组，前端会显示"暂无历史数据"
-  }
+    // 创建script标签
+    const script = document.createElement('script');
+    script.src = url;
+    script.onerror = () => {
+      // 请求失败时清理并返回空数组
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+      delete window[callbackName];
+      if (timeoutId) clearTimeout(timeoutId);
+      console.error(`JSONP请求失败: ${url}`);
+      resolve([]);
+    };
+    
+    // 设置超时（10秒）
+    const timeoutId = setTimeout(() => {
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+      delete window[callbackName];
+      console.error(`JSONP请求超时: ${url}`);
+      resolve([]);
+    }, 10000);
+    
+    // 发起请求
+    document.head.appendChild(script);
+  });
 };
+
