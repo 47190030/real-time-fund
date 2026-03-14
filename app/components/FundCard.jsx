@@ -92,7 +92,7 @@ export default function FundCard({
     }
     
     const change = ((current.value - previous.value) / previous.value) * 100;
-    const formatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+    const formatted = `${change > 0 ? '+' : ''}${Math.abs(change).toFixed(2)}%`;
     return { value: change, formatted };
   };
 
@@ -209,7 +209,7 @@ export default function FundCard({
         <div className="actions">
           <div className="badge-v">
             <span>{f.noValuation ? '净值日期' : '估值时间'}</span>
-            <strong>{f.noValuation ? (f.jzrq) : (f.gztime || f.time)}</strong>
+            <strong>{f.noValuation ? (f.jzrq || '-') : (f.gztime || f.time || '-')}</strong>
           </div>
           <div className="row" style={{ gap: 4 }}>
             <button
