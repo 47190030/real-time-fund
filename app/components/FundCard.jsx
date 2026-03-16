@@ -18,8 +18,6 @@ import {
   SwitchIcon,
   TrashIcon,
 } from './Icons';
-import { fetchFundHistory } from '@/app/api/fund';
-import { useState, useEffect, useCallback } from 'react';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -36,7 +34,6 @@ const getBrowserTimeZone = () => {
 const TZ = getBrowserTimeZone();
 const toTz = (input) => (input ? dayjs.tz(input, TZ) : dayjs().tz(TZ));
 
-// 日期格式化函数
 const formatDisplayDate = (value) => {
   if (!value) return '-';
 
@@ -46,13 +43,6 @@ const formatDisplayDate = (value) => {
   const hasTime = /[T\s]\d{2}:\d{2}/.test(String(value));
 
   return hasTime ? d.format('MM-DD HH:mm') : d.format('MM-DD');
-};
-
-// Stat 组件的颜色判断逻辑
-const getStatColorClass = (delta) => {
-  if (delta > 0) return 'up';
-  if (delta < 0) return 'down';
-  return '';
 };
 
 export default function FundCard({
@@ -79,93 +69,12 @@ export default function FundCard({
   onPercentModeToggle,
   onToggleCollapse,
   onToggleTrendCollapse,
-  layoutMode = 'card',
+  layoutMode = 'card', // 'card' | 'drawer'，drawer 时前10重仓与业绩走势以 Tabs 展示
   masked = false,
 }) {
   const holding = holdings[f?.code];
   const profit = getHoldingProfit?.(f, holding) ?? null;
   const hasHoldings = f.holdingsIsLastQuarter && Array.isArray(f.holdings) && f.holdings.length > 0;
-
-  const [showHistory, setShowHistory] = useState(false);
-  const [historyRange, setHistoryRange] = useState('1m');
-  const [allHistoryData, setAllHistoryData] = useState([]);
-  const [displayedData, setDisplayedData] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [hasMoreData, setHasMoreData] = useState(false);
-
-  const PAGE_SIZE = 5;
-
-  const timeRangeConfig = [
-    { key: '1m', label: '1个月' },
-    { key: '3m', label: '3个月' },
-    { key: '6m', label: '6个月' },
-    { key: '1y', label: '1年' },
-    { key: '3y', label: '3年' },
-    { key: 'all', label: '全部' }
-  ];
-
-  const calculateDailyChange = (current, previous) => {
-    if (!previous || previous.value === 0 || current.value === previous.value) {
-      return { value: null, formatted: '--' };
-    }
-    
-    const change = ((current.value - previous.value) / previous.value) * 100;
-    const formatted = `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
-    return { value: change, formatted };
-  };
-
-  const loadHistoryData = useCallback(async (code, range) => {
-    if (!code || loadingHistory) return;
-    setLoadingHistory(true);
-    try {
-      const data = await fetchFundHistory(code, range);
-      
-      const sortedData = [...(data || [])].sort((a, b) => {
-        return new Date(b.date) - new Date(a.date);
-      });
-
-      const dataWithChange = sortedData.map((item, index) => {
-        const prevItem = sortedData[index + 1];
-        const change = calculateDailyChange(item, prevItem);
-        return {
-          ...item,
-          change: change.value,
-          changeFormatted: change.formatted
-        };
-      });
-
-      setAllHistoryData(dataWithChange);
-      
-      setCurrentPage(1);
-      setDisplayedData(dataWithChange.slice(0, PAGE_SIZE));
-      setHasMoreData(dataWithChange.length > PAGE_SIZE);
-    } catch (error) {
-      console.error('获取历史净值失败:', error);
-      setAllHistoryData([]);
-      setDisplayedData([]);
-      setHasMoreData(false);
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, [loadingHistory, PAGE_SIZE]);
-
-  const loadMoreData = () => {
-    const nextPage = currentPage + 1;
-    const startIndex = 0;
-    const endIndex = nextPage * PAGE_SIZE;
-    const newData = allHistoryData.slice(startIndex, endIndex);
-    
-    setDisplayedData(newData);
-    setCurrentPage(nextPage);
-    setHasMoreData(allHistoryData.length > newData.length);
-  };
-
-  useEffect(() => {
-    if (f?.code) {
-      loadHistoryData(f.code, historyRange);
-    }
-  }, [f?.code, historyRange, loadHistoryData]);
 
   const style = layoutMode === 'drawer' ? {
     border: 'none',
@@ -463,179 +372,119 @@ export default function FundCard({
         );
       })()}
 
-      {hasHoldings && (
-        <>
-          <div
-            style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none' }}
-            className="title"
-            onClick={() => onToggleCollapse?.(f.code)}
-          >
-            <div className="row" style={{ width: '100%', flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>前10重仓股票</span>
-                <ChevronIcon
-                  width="16"
-                  height="16"
-                  className="muted"
-                  style={{
-                    transform: collapsedCodes?.has(f.code)
-                      ? 'rotate(-90deg)'
-                      : 'rotate(0deg)',
-                    transition: 'transform 0.2s ease',
-                  }}
-                />
-              </div>
-              <span className="muted">涨跌幅 / 占比</span>
-            </div>
-          </div>
-          <AnimatePresence>
-            {!collapsedCodes?.has(f.code) && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.3, ease: 'easeInOut' }}
-                style={{ overflow: 'hidden' }}
-              >
-                <div className="list">
-                  {f.holdings.map((h, idx) => (
-                    <div className="item" key={idx}>
-                      <span className="name">{h.name}</span>
-                      <div className="values">
-                        {isNumber(h.change) && (
-                          <span
-                            className={`badge ${h.change > 0 ? 'up' : h.change < 0 ? 'down' : ''}`}
-                            style={{ marginRight: 8 }}
-                          >
-                            {h.change > 0 ? '+' : ''}
-                            {h.change.toFixed(2)}%
-                          </span>
-                        )}
-                        <span className="weight">{h.weight}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
+      {layoutMode === 'drawer' ? (
+        <Tabs defaultValue={hasHoldings ? 'holdings' : 'trend'} className="w-full">
+          <TabsList className={`w-full ${hasHoldings ? 'grid grid-cols-2' : ''}`}>
+            {hasHoldings && (
+              <TabsTrigger value="holdings">前10重仓股票</TabsTrigger>
             )}
-          </AnimatePresence>
-        </>
-      )}
-
-      <div style={{ marginTop: '16px', marginBottom: '16px' }}>
-        <FundTrendChart
-          key={`${f.code}-${theme}`}
-          code={f.code}
-          isExpanded={!collapsedTrends?.has(f.code)}
-          onToggleExpand={() => onToggleTrendCollapse?.(f.code)}
-          transactions={transactions?.[f.code] || []}
-          theme={theme}
-        />
-      </div>
-
-      <div
-        style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none' }}
-        className="title"
-        onClick={() => setShowHistory(!showHistory)}
-      >
-        <div className="row" style={{ width: '100%', flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>历史净值</span>
-            <ChevronIcon
-              width="16"
-              height="16"
-              className="muted"
-              style={{
-                transform: showHistory
-                  ? 'rotate(0deg)'
-                  : 'rotate(-90deg)',
-                transition: 'transform 0.2s ease',
-              }}
-            />
-          </div>
-          <span className="muted"></span>
-        </div>
-      </div>
-      
-      <AnimatePresence>
-        {showHistory && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            style={{ overflow: 'hidden' }}
-          >
-            <div className="space-y-3">
-              <div className="flex gap-1 sm:gap-2 flex-wrap overflow-x-auto py-1">
-                {timeRangeConfig.map(({ key, label }) => (
-                  <button
-                    key={key}
-                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded whitespace-nowrap flex-shrink-0 transition-colors ${
-                      historyRange === key
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                    }`}
-                    onClick={() => setHistoryRange(key)}
-                    disabled={loadingHistory}
-                  >
-                    {label}
-                  </button>
+            <TabsTrigger value="trend">业绩走势</TabsTrigger>
+          </TabsList>
+          {hasHoldings && (
+            <TabsContent value="holdings" className="mt-3 outline-none">
+              <div className="list">
+                {f.holdings.map((h, idx) => (
+                  <div className="item" key={idx}>
+                    <span className="name">{h.name}</span>
+                    <div className="values">
+                      {isNumber(h.change) && (
+                        <span
+                          className={`badge ${h.change > 0 ? 'up' : h.change < 0 ? 'down' : ''}`}
+                          style={{ marginRight: 8 }}
+                        >
+                          {h.change > 0 ? '+' : ''}
+                          {h.change.toFixed(2)}%
+                        </span>
+                      )}
+                      <span className="weight">{h.weight}</span>
+                    </div>
+                  </div>
                 ))}
               </div>
-
-              {loadingHistory ? (
-                <div className="text-center py-4 text-muted text-base">加载中...</div>
-              ) : displayedData.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-lg">日期</th>
-                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-lg">单位净值</th>
-                        <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap text-lg">日涨跌幅</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayedData.map((item, idx) => {
-                        const colorClass = getStatColorClass(item.change);
-                        return (
-                          <tr key={idx} className="border-b border-border hover:bg-secondary/20 transition-colors">
-                            <td className="p-3 whitespace-nowrap font-medium text-base">{item.date}</td>
-                            <td className="p-3 whitespace-nowrap font-medium text-base">{item.value.toFixed(4)}</td>
-                            <td className={`p-3 whitespace-nowrap font-medium text-base ${colorClass}`}>
-                              {item.change !== null && item.change !== undefined
-                                ? `${item.change > 0 ? '+' : ''}${item.change.toFixed(2)}%`
-                                : '--'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  
-                  {hasMoreData && (
-                    <div className="mt-4 text-center">
-                      <button
-                        onClick={loadMoreData}
-                        disabled={loadingHistory}
-                        className="px-4 py-2 text-sm bg-secondary hover:bg-secondary/80 text-foreground rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full"
-                      >
-                        {loadingHistory ? '加载中...' : '加载更多历史净值'}
-                      </button>
-                      <div className="text-xs text-muted-foreground mt-2">
-                        已显示 {displayedData.length} 条，共 {allHistoryData.length} 条数据
-                      </div>
-                    </div>
-                  )}
+            </TabsContent>
+          )}
+          <TabsContent value="trend" className="mt-3 outline-none">
+            <FundTrendChart
+              key={`${f.code}-${theme}`}
+              code={f.code}
+              isExpanded
+              onToggleExpand={() => onToggleTrendCollapse?.(f.code)}
+              transactions={transactions?.[f.code] || []}
+              theme={theme}
+              hideHeader
+            />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <>
+          {hasHoldings && (
+            <>
+              <div
+                style={{ marginBottom: 8, cursor: 'pointer', userSelect: 'none' }}
+                className="title"
+                onClick={() => onToggleCollapse?.(f.code)}
+              >
+                <div className="row" style={{ width: '100%', flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>前10重仓股票</span>
+                    <ChevronIcon
+                      width="16"
+                      height="16"
+                      className="muted"
+                      style={{
+                        transform: collapsedCodes?.has(f.code)
+                          ? 'rotate(-90deg)'
+                          : 'rotate(0deg)',
+                        transition: 'transform 0.2s ease',
+                      }}
+                    />
+                  </div>
+                  <span className="muted">涨跌幅 / 占比</span>
                 </div>
-              ) : (
-                <div className="text-center py-4 text-muted text-base">暂无历史数据</div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              </div>
+              <AnimatePresence>
+                {!collapsedCodes?.has(f.code) && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: 'easeInOut' }}
+                    style={{ overflow: 'hidden' }}
+                  >
+                    <div className="list">
+                      {f.holdings.map((h, idx) => (
+                        <div className="item" key={idx}>
+                          <span className="name">{h.name}</span>
+                          <div className="values">
+                            {isNumber(h.change) && (
+                              <span
+                                className={`badge ${h.change > 0 ? 'up' : h.change < 0 ? 'down' : ''}`}
+                                style={{ marginRight: 8 }}
+                              >
+                                {h.change > 0 ? '+' : ''}
+                                {h.change.toFixed(2)}%
+                              </span>
+                            )}
+                            <span className="weight">{h.weight}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </>
+          )}
+          <FundTrendChart
+            key={`${f.code}-${theme}`}
+            code={f.code}
+            isExpanded={!collapsedTrends?.has(f.code)}
+            onToggleExpand={() => onToggleTrendCollapse?.(f.code)}
+            transactions={transactions?.[f.code] || []}
+            theme={theme}
+          />
+        </>
+      )}
     </motion.div>
   );
 }

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const ANNOUNCEMENT_KEY = 'hasClosedAnnouncement_v16';
+const ANNOUNCEMENT_KEY = 'hasClosedAnnouncement_v17';
 
 export default function Announcement() {
   const [isVisible, setIsVisible] = useState(false);
@@ -75,15 +75,17 @@ export default function Announcement() {
               <span>公告</span>
             </div>
             <div style={{ color: 'var(--text)', lineHeight: '1.6', fontSize: '15px', overflowY: 'auto', minHeight: 0, flex: 1, paddingRight: '4px' }}>
-              <p>v0.2.5 紧急更新：</p>
-              <p>1. 修复拍照失败 key 过期问题。</p>
-              <p>2. 设置持仓输入回滚问题。</p>
-              <p>3. 添加历史净值功能。</p>
+              <p>v0.2.6 更新内容：</p>
+              <p>1. 新增大盘指数并支持个性化。</p>
+              <p>2. 新增持仓金额排序以及排序个性化设置。</p>
+              <p>3. 新增历史净值。</p>
+              <p>4. 表格视图斑马纹。</p>
               <br/>
-              <p>下周更新内容:</p>
-              <p>1. 大盘数据。</p>
-              <p>2. 关联板块。</p>
-              <p>如有建议，欢迎用户反馈。</p>
+              <p>下一版本更新内容:</p>
+              <p>1. 关联板块。</p>
+              <p>2. 收益曲线。</p>
+              <p>3. 估值差异列。</p>
+              <p>如有建议和问题，欢迎进用户支持群反馈。</p>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
