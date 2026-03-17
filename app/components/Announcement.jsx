@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const ANNOUNCEMENT_KEY = 'hasClosedAnnouncement_v17';
+const ANNOUNCEMENT_KEY = 'hasClosedAnnouncement_v18';
 
 export default function Announcement() {
   const [isVisible, setIsVisible] = useState(false);
@@ -75,11 +75,11 @@ export default function Announcement() {
               <span>公告</span>
             </div>
             <div style={{ color: 'var(--text)', lineHeight: '1.6', fontSize: '15px', overflowY: 'auto', minHeight: 0, flex: 1, paddingRight: '4px' }}>
-              <p>v0.2.6 更新内容：</p>
-              <p>1. 新增大盘指数并支持个性化。</p>
-              <p>2. 新增持仓金额排序以及排序个性化设置。</p>
-              <p>3. 新增历史净值。</p>
-              <p>4. 表格视图斑马纹。</p>
+              <p>v0.2.7 更新内容：</p>
+              <p>1. 业绩走势增加对比线。</p>
+              <p>2. 修复排序存储别名问题。</p>
+              <p>3. PC端斑马纹 hover 样式问题。</p>
+              <p>4. 修复大盘指数刷新及用户数据同步问题。</p>
               <br/>
               <p>下一版本更新内容:</p>
               <p>1. 关联板块。</p>

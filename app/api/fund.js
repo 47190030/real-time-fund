@@ -770,23 +770,62 @@ export const fetchFundHistory = async (code, range = '1m') => {
     default: start = start.subtract(1, 'month');
   }
 
-  // 业绩走势统一走 pingzhongdata.Data_netWorthTrend
+  // 业绩走势统一走 pingzhongdata.Data_netWorthTrend，
+  // 同时附带 Data_grandTotal（若存在，格式为 [{ name, data: [[ts, val], ...] }, ...]）
   try {
     const pz = await fetchFundPingzhongdata(code);
     const trend = pz?.Data_netWorthTrend;
+    const grandTotal = pz?.Data_grandTotal;
+
     if (Array.isArray(trend) && trend.length) {
       const startMs = start.startOf('day').valueOf();
-      // end 可能是当日任意时刻，这里用 end-of-day 包含最后一天
       const endMs = end.endOf('day').valueOf();
-      const out = trend
-        .filter((d) => d && typeof d.x === 'number' && d.x >= startMs && d.x <= endMs)
+
+      // 若起始日没有净值，则往前推到最近一日有净值的数据作为有效起始
+      const validTrend = trend
+        .filter((d) => d && typeof d.x === 'number' && Number.isFinite(Number(d.y)) && d.x <= endMs)
+        .sort((a, b) => a.x - b.x);
+      const startDayEndMs = startMs + 24 * 60 * 60 * 1000 - 1;
+      const hasPointOnStartDay = validTrend.some((d) => d.x >= startMs && d.x <= startDayEndMs);
+      let effectiveStartMs = startMs;
+      if (!hasPointOnStartDay) {
+        const lastBeforeStart = validTrend.filter((d) => d.x < startMs).pop();
+        if (lastBeforeStart) effectiveStartMs = lastBeforeStart.x;
+      }
+
+      const out = validTrend
+        .filter((d) => d.x >= effectiveStartMs && d.x <= endMs)
         .map((d) => {
           const value = Number(d.y);
-          if (!Number.isFinite(value)) return null;
           const date = dayjs(d.x).tz(TZ).format('YYYY-MM-DD');
           return { date, value };
-        })
-        .filter(Boolean);
+        });
+
+      // 解析 Data_grandTotal 为多条对比曲线，使用同一有效起始日
+      if (Array.isArray(grandTotal) && grandTotal.length) {
+        const grandTotalSeries = grandTotal
+          .map((series) => {
+            if (!series || !series.data || !Array.isArray(series.data)) return null;
+            const name = series.name || '';
+            const points = series.data
+              .filter((item) => Array.isArray(item) && typeof item[0] === 'number')
+              .map(([ts, val]) => {
+                if (ts < effectiveStartMs || ts > endMs) return null;
+                const numVal = Number(val);
+                if (!Number.isFinite(numVal)) return null;
+                const date = dayjs(ts).tz(TZ).format('YYYY-MM-DD');
+                return { ts, date, value: numVal };
+              })
+              .filter(Boolean);
+            if (!points.length) return null;
+            return { name, points };
+          })
+          .filter(Boolean);
+
+        if (grandTotalSeries.length) {
+          out.grandTotalSeries = grandTotalSeries;
+        }
+      }
 
       if (out.length) return out;
     }
@@ -799,6 +838,7 @@ export const fetchFundHistory = async (code, range = '1m') => {
 const API_KEYS = [
   'sk-5b03d4e02ec22dd2ba233fb6d2dd549b',
   'sk-5f14ce9c6e94af922bf592942426285c'
+  'sk-c4ec79590435e64cc793ecd211082e9e'
   // 添加更多 API Key 到这里
 ];
 
