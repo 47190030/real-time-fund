@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-export default function HoldingEditModal({ fund, holding, onClose, onSave }) {
+export default function HoldingEditModal({ fund, holding, onClose, onSave, onOpenTrade }) {
   const [mode, setMode] = useState('amount'); // 'amount' | 'share'
 
   const dwjz = fund?.dwjz || fund?.gsz || 0;
@@ -124,6 +124,23 @@ export default function HoldingEditModal({ fund, holding, onClose, onSave }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <SettingsIcon width="20" height="20" />
             <span>设置持仓</span>
+            {typeof onOpenTrade === 'function' && (
+              <button
+                type="button"
+                onClick={onOpenTrade}
+                className="button secondary"
+                style={{
+                  height: 28,
+                  padding: '0 10px',
+                  borderRadius: 999,
+                  fontSize: 12,
+                  background: 'rgba(255,255,255,0.06)',
+                  color: 'var(--primary)',
+                }}
+              >
+                今日买入？去加仓。
+              </button>
+            )}
           </div>
           <button className="icon-button" onClick={onClose} style={{ border: 'none', background: 'transparent' }}>
             <CloseIcon width="20" height="20" />

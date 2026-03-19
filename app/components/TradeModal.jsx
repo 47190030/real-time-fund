@@ -6,7 +6,7 @@ import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import { isNumber } from 'lodash';
-import { fetchSmartFundNetValue } from '../api/fund';
+import { fetchFundPingzhongdata, fetchSmartFundNetValue } from '../api/fund';
 import { DatePicker, NumericInput } from './Common';
 import ConfirmModal from './ConfirmModal';
 import { CloseIcon } from './Icons';
@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import PendingTradesModal from './PendingTradesModal';
+import { Spinner } from '@/components/ui/spinner';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -39,11 +40,64 @@ export default function TradeModal({ type, fund, holding, onClose, onConfirm, pe
   const [share, setShare] = useState('');
   const [amount, setAmount] = useState('');
   const [feeRate, setFeeRate] = useState('0');
+  const [minBuyAmount, setMinBuyAmount] = useState(0);
+  const [loadingBuyMeta, setLoadingBuyMeta] = useState(false);
+  const [buyMetaError, setBuyMetaError] = useState(null);
   const [date, setDate] = useState(() => {
     return formatDate();
   });
   const [isAfter3pm, setIsAfter3pm] = useState(nowInTz().hour() >= 15);
   const [calcShare, setCalcShare] = useState(null);
+
+  const parseNumberish = (input) => {
+    if (input === null || typeof input === 'undefined') return null;
+    if (typeof input === 'number') return Number.isFinite(input) ? input : null;
+    const cleaned = String(input).replace(/[^\d.]/g, '');
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  useEffect(() => {
+    if (!isBuy || !fund?.code) return;
+    let cancelled = false;
+
+    setLoadingBuyMeta(true);
+    setBuyMetaError(null);
+
+    fetchFundPingzhongdata(fund.code)
+      .then((pz) => {
+        if (cancelled) return;
+        const rate = parseNumberish(pz?.fund_Rate);
+        const minsg = parseNumberish(pz?.fund_minsg);
+
+        if (Number.isFinite(minsg)) {
+          setMinBuyAmount(minsg);
+        } else {
+          setMinBuyAmount(0);
+        }
+
+        if (Number.isFinite(rate)) {
+          setFeeRate((prev) => {
+            const prevNum = parseNumberish(prev);
+            const shouldOverride = prev === '' || prev === '0' || prevNum === 0 || prevNum === null;
+            return shouldOverride ? rate.toFixed(2) : prev;
+          });
+        }
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setBuyMetaError(e?.message || '买入信息加载失败');
+        setMinBuyAmount(0);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoadingBuyMeta(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isBuy, fund?.code]);
 
   const currentPendingTrades = useMemo(() => {
     return pendingTrades.filter(t => t.fundCode === fund?.code);
@@ -148,7 +202,7 @@ export default function TradeModal({ type, fund, holding, onClose, onConfirm, pe
   };
 
   const isValid = isBuy
-    ? (!!amount && !!feeRate && !!date && calcShare !== null)
+    ? (!!amount && !!feeRate && !!date && calcShare !== null && !loadingBuyMeta && (parseFloat(amount) || 0) >= (Number(minBuyAmount) || 0))
     : (!!share && !!date);
 
   const handleSetShareFraction = (fraction) => {
@@ -372,72 +426,112 @@ export default function TradeModal({ type, fund, holding, onClose, onConfirm, pe
               <form onSubmit={handleSubmit}>
                 {isBuy ? (
                   <>
-                    <div className="form-group" style={{ marginBottom: 16 }}>
-                      <label className="muted" style={{ display: 'block', marginBottom: 8, fontSize: '14px' }}>
-                        加仓金额 (¥) <span style={{ color: 'var(--danger)' }}>*</span>
-                      </label>
-                      <div style={{ border: !amount ? '1px solid var(--danger)' : '1px solid var(--border)', borderRadius: 12 }}>
-                        <NumericInput
-                          value={amount}
-                          onChange={setAmount}
-                          step={100}
-                          min={0}
-                          placeholder="请输入加仓金额"
-                        />
-                      </div>
-                    </div>
+                    <div style={{ position: 'relative' }}>
+                      <div style={{ pointerEvents: loadingBuyMeta ? 'none' : 'auto', opacity: loadingBuyMeta ? 0.55 : 1 }}>
+                        <div className="form-group" style={{ marginBottom: 16 }}>
+                          <label className="muted" style={{ display: 'block', marginBottom: 8, fontSize: '14px' }}>
+                            加仓金额 (¥) <span style={{ color: 'var(--danger)' }}>*</span>
+                          </label>
+                          <div
+                            style={{
+                              border: (!amount || (Number(minBuyAmount) > 0 && (parseFloat(amount) || 0) < Number(minBuyAmount)))
+                                ? '1px solid var(--danger)'
+                                : '1px solid var(--border)',
+                              borderRadius: 12
+                            }}
+                          >
+                            <NumericInput
+                              value={amount}
+                              onChange={setAmount}
+                              step={100}
+                              min={Number(minBuyAmount) || 0}
+                              placeholder={(Number(minBuyAmount) || 0) > 0 ? `最少 ¥${Number(minBuyAmount)}，请输入加仓金额` : '请输入加仓金额'}
+                            />
+                          </div>
+                          {(Number(minBuyAmount) || 0) > 0 && (
+                            <div className="muted" style={{ fontSize: '12px', marginTop: 6 }}>
+                              最小加仓金额：¥{Number(minBuyAmount)}
+                            </div>
+                          )}
+                        </div>
 
-                    <div className="row" style={{ gap: 12, marginBottom: 16 }}>
-                      <div className="form-group" style={{ flex: 1 }}>
-                        <label className="muted" style={{ display: 'block', marginBottom: 8, fontSize: '14px' }}>
-                          买入费率 (%) <span style={{ color: 'var(--danger)' }}>*</span>
-                        </label>
-                        <div style={{ border: !feeRate ? '1px solid var(--danger)' : '1px solid var(--border)', borderRadius: 12 }}>
-                          <NumericInput
-                            value={feeRate}
-                            onChange={setFeeRate}
-                            step={0.01}
-                            min={0}
-                            placeholder="0.12"
-                          />
+                        <div className="row" style={{ gap: 12, marginBottom: 16 }}>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label className="muted" style={{ display: 'block', marginBottom: 8, fontSize: '14px' }}>
+                              买入费率 (%) <span style={{ color: 'var(--danger)' }}>*</span>
+                            </label>
+                            <div style={{ border: !feeRate ? '1px solid var(--danger)' : '1px solid var(--border)', borderRadius: 12 }}>
+                              <NumericInput
+                                value={feeRate}
+                                onChange={setFeeRate}
+                                step={0.01}
+                                min={0}
+                                placeholder="0.12"
+                              />
+                            </div>
+                          </div>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label className="muted" style={{ display: 'block', marginBottom: 8, fontSize: '14px' }}>
+                              加仓日期 <span style={{ color: 'var(--danger)' }}>*</span>
+                            </label>
+                            <DatePicker value={date} onChange={setDate} />
+                          </div>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: 12 }}>
+                          <label className="muted" style={{ display: 'block', marginBottom: 8, fontSize: '14px' }}>
+                            交易时段
+                          </label>
+                          <div className="trade-time-slot row" style={{ gap: 8 }}>
+                            <button
+                              type="button"
+                              className={!isAfter3pm ? 'trade-time-btn active' : 'trade-time-btn'}
+                              onClick={() => setIsAfter3pm(false)}
+                            >
+                              15:00前
+                            </button>
+                            <button
+                              type="button"
+                              className={isAfter3pm ? 'trade-time-btn active' : 'trade-time-btn'}
+                              onClick={() => setIsAfter3pm(true)}
+                            >
+                              15:00后
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ marginBottom: 12, fontSize: '12px' }}>
+                          {buyMetaError ? (
+                            <span className="muted" style={{ color: 'var(--danger)' }}>{buyMetaError}</span>
+                          ) : null}
+                          {loadingPrice ? (
+                            <span className="muted">正在查询净值数据...</span>
+                          ) : price === 0 ? null : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <span className="muted">参考净值: {Number(price).toFixed(4)}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <div className="form-group" style={{ flex: 1 }}>
-                        <label className="muted" style={{ display: 'block', marginBottom: 8, fontSize: '14px' }}>
-                          加仓日期 <span style={{ color: 'var(--danger)' }}>*</span>
-                        </label>
-                        <DatePicker value={date} onChange={setDate} />
-                      </div>
-                    </div>
 
-                    <div className="form-group" style={{ marginBottom: 12 }}>
-                      <label className="muted" style={{ display: 'block', marginBottom: 8, fontSize: '14px' }}>
-                        交易时段
-                      </label>
-                      <div className="trade-time-slot row" style={{ gap: 8 }}>
-                        <button
-                          type="button"
-                          className={!isAfter3pm ? 'trade-time-btn active' : 'trade-time-btn'}
-                          onClick={() => setIsAfter3pm(false)}
+                      {loadingBuyMeta && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 10,
+                            padding: 12,
+                            borderRadius: 12,
+                            background: 'rgba(0,0,0,0.25)',
+                            backdropFilter: 'blur(2px)',
+                            WebkitBackdropFilter: 'blur(2px)',
+                          }}
                         >
-                          15:00前
-                        </button>
-                        <button
-                          type="button"
-                          className={isAfter3pm ? 'trade-time-btn active' : 'trade-time-btn'}
-                          onClick={() => setIsAfter3pm(true)}
-                        >
-                          15:00后
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={{ marginBottom: 12, fontSize: '12px' }}>
-                      {loadingPrice ? (
-                        <span className="muted">正在查询净值数据...</span>
-                      ) : price === 0 ? null : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <span className="muted">参考净值: {Number(price).toFixed(4)}</span>
+                          <Spinner className="size-5" />
+                          <span className="muted" style={{ fontSize: 12 }}>正在加载买入费率/最小金额...</span>
                         </div>
                       )}
                     </div>
@@ -564,8 +658,8 @@ export default function TradeModal({ type, fund, holding, onClose, onConfirm, pe
                   <button
                     type="submit"
                     className="button"
-                    disabled={!isValid || loadingPrice}
-                    style={{ flex: 1, opacity: (!isValid || loadingPrice) ? 0.6 : 1 }}
+                    disabled={!isValid || loadingPrice || (isBuy && loadingBuyMeta)}
+                    style={{ flex: 1, opacity: (!isValid || loadingPrice || (isBuy && loadingBuyMeta)) ? 0.6 : 1 }}
                   >
                     确定
                   </button>

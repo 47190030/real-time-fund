@@ -187,6 +187,11 @@ export default function MobileSettingModal({
                             估值涨幅与持有收益的汇总
                           </span>
                         )}
+                        {item.id === 'relatedSector' && (
+                          <span className="muted" style={{ fontSize: '12px' }}>
+                            仅 fund.cc.cd 地址支持
+                          </span>
+                        )}
                       </div>
                       {onToggleColumnVisibility && (
                         <Switch

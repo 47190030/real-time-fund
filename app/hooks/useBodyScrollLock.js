@@ -15,9 +15,11 @@ function lockBodyScroll() {
     originalBodyPosition = document.body.style.position || "";
     originalBodyTop = document.body.style.top || "";
 
-    document.body.style.position = "fixed";
-    document.body.style.top = `-${lockedScrollY}px`;
-    document.body.style.width = "100%";
+    requestAnimationFrame(() => {
+      document.body.style.top = `-${lockedScrollY}px`;
+      document.body.style.width = "100%";
+      document.body.style.position = "fixed";
+    });
   }
 }
 
@@ -28,12 +30,15 @@ function unlockBodyScroll() {
 
   // 只有全部弹框都关闭时才恢复滚动位置
   if (scrollLockCount === 0) {
+    const scrollY = lockedScrollY;
+
     document.body.style.position = originalBodyPosition;
     document.body.style.top = originalBodyTop;
     document.body.style.width = "";
 
-    // 恢复到锁定前的滚动位置，而不是跳到顶部
-    window.scrollTo(0, lockedScrollY);
+    requestAnimationFrame(() => {
+      window.scrollTo(0, scrollY);
+    });
   }
 }
 

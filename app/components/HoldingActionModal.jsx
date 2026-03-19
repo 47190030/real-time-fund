@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-export default function HoldingActionModal({ fund, onClose, onAction, hasHistory }) {
+export default function HoldingActionModal({ fund, onClose, onAction, hasHistory, pendingCount }) {
   const handleOpenChange = (open) => {
     if (!open) {
       onClose?.();
@@ -39,11 +39,26 @@ export default function HoldingActionModal({ fund, onClose, onAction, hasHistory
                 display: 'flex',
                 alignItems: 'center',
                 gap: 4,
+                position: 'relative',
               }}
               title="查看交易记录"
             >
               <span>📜</span>
               <span>交易记录</span>
+              {pendingCount > 0 && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    backgroundColor: '#ef4444',
+                    border: '2px solid var(--background)',
+                  }}
+                />
+              )}
             </button>
           </div>
           <button className="icon-button" onClick={onClose} style={{ border: 'none', background: 'transparent' }}>
