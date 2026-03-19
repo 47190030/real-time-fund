@@ -883,7 +883,21 @@ export default function HomePage() {
 
   const handleClearConfirm = () => {
     if (clearConfirm?.fund) {
-      handleSaveHolding(clearConfirm.fund.code, { share: null, cost: null });
+      const code = clearConfirm.fund.code;
+      handleSaveHolding(code, { share: null, cost: null });
+
+      setTransactions(prev => {
+        const next = { ...(prev || {}) };
+        delete next[code];
+        storageHelper.setItem('transactions', JSON.stringify(next));
+        return next;
+      });
+
+      setPendingTrades(prev => {
+        const next = prev.filter(trade => trade.fundCode !== code);
+        storageHelper.setItem('pendingTrades', JSON.stringify(next));
+        return next;
+      });
     }
     setClearConfirm(null);
   };
@@ -1039,6 +1053,11 @@ export default function HomePage() {
         const next = [...pendingTrades, pending];
         setPendingTrades(next);
         storageHelper.setItem('pendingTrades', JSON.stringify(next));
+
+        // 如果该基金没有持仓数据，初始化持仓金额为 0
+        if (!holdings[fund.code]) {
+          handleSaveHolding(fund.code, { share: 0, cost: 0 });
+        }
 
         setTradeModal({ open: false, fund: null, type: 'buy' });
         showToast('净值暂未更新，已加入待处理队列', 'info');
@@ -3165,9 +3184,10 @@ export default function HomePage() {
   const fetchCloudConfig = async (userId, checkConflict = false) => {
     if (!userId) return;
     try {
+      // 一次查询同时拿到 meta 与 data，方便两种模式复用
       const { data: meta, error: metaError } = await supabase
         .from('user_configs')
-        .select(`id, updated_at${checkConflict ? ', data' : ''}`)
+        .select('id, data, updated_at')
         .eq('user_id', userId)
         .maybeSingle();
 
@@ -3181,44 +3201,19 @@ export default function HomePage() {
         setCloudConfigModal({ open: true, userId, type: 'empty' });
         return;
       }
+
+      // 冲突检查模式：使用 meta.data 弹出冲突确认弹窗
       if (checkConflict) {
         setCloudConfigModal({ open: true, userId, type: 'conflict', cloudData: meta.data });
         return;
       }
 
-      const localUpdatedAt = window.localStorage.getItem('localUpdatedAt');
-      if (localUpdatedAt && meta.updated_at && new Date(meta.updated_at) < new Date(localUpdatedAt)) {
+      // 非冲突检查模式：直接复用上方查询到的 meta 数据，覆盖本地
+      if (meta.data && isPlainObject(meta.data) && Object.keys(meta.data).length > 0) {
+        await applyCloudConfig(meta.data, meta.updated_at);
         return;
       }
 
-      const { data, error } = await supabase
-        .from('user_configs')
-        .select('id, data, updated_at')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data?.data && isPlainObject(data.data) && Object.keys(data.data).length > 0) {
-        const localPayload = collectLocalPayload();
-        const localComparable = getComparablePayload(localPayload);
-        const cloudComparable = getComparablePayload(data.data);
-
-        if (localComparable !== cloudComparable) {
-          // 如果数据不一致
-          if (checkConflict) {
-            // 只有明确要求检查冲突时才提示（例如刚登录时）
-            setCloudConfigModal({ open: true, userId, type: 'conflict', cloudData: data.data });
-            return;
-          }
-          // 否则直接覆盖本地（例如已登录状态下的刷新）
-          await applyCloudConfig(data.data, data.updated_at);
-          return;
-        }
-
-        await applyCloudConfig(data.data, data.updated_at);
-        return;
-      }
       setCloudConfigModal({ open: true, userId, type: 'empty' });
     } catch (e) {
       console.error('获取云端配置失败', e);
@@ -4438,7 +4433,6 @@ export default function HomePage() {
               点此提交反馈
             </button>
           </p>
-
         </div>
       </div>
 
@@ -4485,6 +4479,7 @@ export default function HomePage() {
             onClose={() => setActionModal({ open: false, fund: null })}
             onAction={(type) => handleAction(type, actionModal.fund)}
             hasHistory={!!transactions[actionModal.fund?.code]?.length}
+            pendingCount={pendingTrades.filter(t => t.fundCode === actionModal.fund?.code).length}
           />
         )}
       </AnimatePresence>
@@ -4593,6 +4588,12 @@ export default function HomePage() {
             holding={holdings[holdingModal.fund?.code]}
             onClose={() => setHoldingModal({ open: false, fund: null })}
             onSave={(data) => handleSaveHolding(holdingModal.fund?.code, data)}
+            onOpenTrade={() => {
+              const f = holdingModal.fund;
+              if (!f) return;
+              setHoldingModal({ open: false, fund: null });
+              setTradeModal({ open: true, fund: f, type: 'buy' });
+            }}
           />
         )}
       </AnimatePresence>
@@ -4699,15 +4700,12 @@ export default function HomePage() {
       )}
 
       {/* 更新提示弹窗 */}
-      <AnimatePresence>
-        {updateModalOpen && (
-          <UpdatePromptModal
-            updateContent={updateContent}
-            onClose={() => setUpdateModalOpen(false)}
-            onRefresh={() => window.location.reload()}
-          />
-        )}
-      </AnimatePresence>
+      <UpdatePromptModal
+        open={updateModalOpen}
+        updateContent={updateContent}
+        onClose={() => setUpdateModalOpen(false)}
+        onRefresh={() => window.location.reload()}
+      />
 
       <AnimatePresence>
         {isScanning && (
