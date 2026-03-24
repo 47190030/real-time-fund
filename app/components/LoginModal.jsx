@@ -1,7 +1,9 @@
 'use client';
 
+import Image from 'next/image';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { MailIcon } from './Icons';
+import githubImg from "../assets/github.svg";
 
 export default function LoginModal({
   onClose,
@@ -13,7 +15,8 @@ export default function LoginModal({
   loginError,
   loginSuccess,
   handleSendOtp,
-  handleVerifyEmailOtp
+  handleVerifyEmailOtp,
+  handleGithubLogin
 }) {
   return (
     <div
@@ -84,7 +87,6 @@ export default function LoginModal({
               type="button"
               className="button secondary"
               onClick={onClose}
-              disabled={loginLoading}
             >
               取消
             </button>
@@ -98,6 +100,9 @@ export default function LoginModal({
             </button>
           </div>
         </form>
+
+
+
       </div>
     </div>
   );

@@ -50,7 +50,7 @@
 
 1. 克隆仓库：
    ```bash
-   git clone https://github.com/47190030/real-time-fund.git
+   git clone https://github.com/hzm0321/real-time-fund.git
    cd real-time-fund
    ```
 

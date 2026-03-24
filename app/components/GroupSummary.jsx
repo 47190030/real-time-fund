@@ -8,6 +8,8 @@ function CountUp({ value, prefix = '', suffix = '', decimals = 2, className = ''
   const [displayValue, setDisplayValue] = useState(value);
   const previousValue = useRef(value);
   const isFirstChange = useRef(true);
+  const rafIdRef = useRef(null);
+  const displayValueRef = useRef(value);
 
   useEffect(() => {
     if (previousValue.current === value) return;
@@ -15,13 +17,14 @@ function CountUp({ value, prefix = '', suffix = '', decimals = 2, className = ''
     if (isFirstChange.current) {
       isFirstChange.current = false;
       previousValue.current = value;
+      displayValueRef.current = value;
       setDisplayValue(value);
       return;
     }
 
-    const start = previousValue.current;
+    const start = displayValueRef.current;
     const end = value;
-    const duration = 400;
+    const duration = 300;
     const startTime = performance.now();
 
     const animate = (currentTime) => {
@@ -29,16 +32,25 @@ function CountUp({ value, prefix = '', suffix = '', decimals = 2, className = ''
       const progress = Math.min(elapsed / duration, 1);
       const ease = 1 - Math.pow(1 - progress, 4);
       const current = start + (end - start) * ease;
+      displayValueRef.current = current;
       setDisplayValue(current);
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        rafIdRef.current = requestAnimationFrame(animate);
       } else {
         previousValue.current = value;
+        rafIdRef.current = null;
       }
     };
 
-    requestAnimationFrame(animate);
+    rafIdRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (rafIdRef.current != null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
   }, [value]);
 
   return (
@@ -56,12 +68,16 @@ export default function GroupSummary({
   groupName,
   getProfit,
   stickyTop,
+  isSticky = false,
+  onToggleSticky,
   masked,
   onToggleMasked,
+  marketIndexAccordionHeight,
+  navbarHeight
 }) {
   const [showPercent, setShowPercent] = useState(true);
+  const [showTodayPercent, setShowTodayPercent] = useState(false);
   const [isMasked, setIsMasked] = useState(masked ?? false);
-  const [isSticky, setIsSticky] = useState(false);
   const rowRef = useRef(null);
   const [assetSize, setAssetSize] = useState(24);
   const [metricSize, setMetricSize] = useState(18);
@@ -115,7 +131,7 @@ export default function GroupSummary({
 
       if (profit) {
         hasHolding = true;
-        totalAsset += profit.amount;
+        totalAsset += Math.round(profit.amount * 100) / 100;
         if (profit.profitToday != null) {
           // 先累加原始当日收益，最后统一做一次四舍五入，避免逐笔四舍五入造成的总计误差
           totalProfitToday += profit.profitToday;
@@ -134,6 +150,7 @@ export default function GroupSummary({
     const roundedTotalProfitToday = Math.round(totalProfitToday * 100) / 100;
 
     const returnRate = totalCost > 0 ? (totalHoldingReturn / totalCost) * 100 : 0;
+    const todayReturnRate = totalCost > 0 ? (roundedTotalProfitToday / totalCost) * 100 : 0;
 
     return {
       totalAsset,
@@ -141,6 +158,7 @@ export default function GroupSummary({
       totalHoldingReturn,
       hasHolding,
       returnRate,
+      todayReturnRate,
       hasAnyTodayData,
     };
   }, [funds, holdings, getProfit]);
@@ -165,12 +183,22 @@ export default function GroupSummary({
     metricSize,
   ]);
 
+  const style = useMemo(()=>{
+    const style = {};
+    if (isSticky) {
+      style.top = stickyTop + 14;
+    }else if(!marketIndexAccordionHeight) {
+      style.marginTop = navbarHeight;
+    }
+    return style;
+  },[isSticky, stickyTop, marketIndexAccordionHeight, navbarHeight])
+
   if (!summary.hasHolding) return null;
 
   return (
     <div
       className={isSticky ? 'group-summary-sticky' : ''}
-      style={isSticky && stickyTop ? { top: stickyTop } : {}}
+      style={style}
     >
       <div
         className="glass card group-summary-card"
@@ -183,7 +211,9 @@ export default function GroupSummary({
       >
         <span
           className="sticky-toggle-btn"
-          onClick={() => setIsSticky(!isSticky)}
+          onClick={() => {
+            onToggleSticky?.(!isSticky);
+          }}
           style={{
             position: 'absolute',
             top: 4,
@@ -262,9 +292,17 @@ export default function GroupSummary({
             <div style={{ textAlign: 'right' }}>
               <div
                 className="muted"
-                style={{ fontSize: '12px', marginBottom: 4 }}
+                style={{
+                  fontSize: '12px',
+                  marginBottom: 4,
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  gap: 2,
+                }}
               >
-                当日收益
+                当日收益{showTodayPercent ? '(%)' : ''}{' '}
+                <SwitchIcon style={{ opacity: 0.4 }} />
               </div>
               <div
                 className={
@@ -280,7 +318,10 @@ export default function GroupSummary({
                   fontSize: '18px',
                   fontWeight: 700,
                   fontFamily: 'var(--font-mono)',
+                  cursor: summary.hasAnyTodayData ? 'pointer' : 'default',
                 }}
+                onClick={() => summary.hasAnyTodayData && setShowTodayPercent(!showTodayPercent)}
+                title="点击切换金额/百分比"
               >
                 {isMasked ? (
                   <span className="mask-text" style={{ fontSize: metricSize }}>
@@ -295,10 +336,18 @@ export default function GroupSummary({
                           ? '-'
                           : ''}
                     </span>
-                    <CountUp
-                      value={Math.abs(summary.totalProfitToday)}
-                      style={{ fontSize: metricSize }}
-                    />
+                    {showTodayPercent ? (
+                      <CountUp
+                        value={Math.abs(summary.todayReturnRate)}
+                        suffix="%"
+                        style={{ fontSize: metricSize }}
+                      />
+                    ) : (
+                      <CountUp
+                        value={Math.abs(summary.totalProfitToday)}
+                        style={{ fontSize: metricSize }}
+                      />
+                    )}
                   </>
                 ) : (
                   <span style={{ fontSize: metricSize }}>--</span>

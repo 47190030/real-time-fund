@@ -189,7 +189,7 @@ export default function MobileSettingModal({
                         )}
                         {item.id === 'relatedSector' && (
                           <span className="muted" style={{ fontSize: '12px' }}>
-                            测试阶段
+                            还在测试中
                           </span>
                         )}
                       </div>
